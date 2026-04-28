@@ -13,6 +13,12 @@ your language -> CommonASM -> x86_64 / riscv64 / more backends later
 - `x86_64-nasm`: Linux x86-64, NASM syntax
 - `riscv64-gnu`: Linux RISC-V 64, GNU assembler syntax
 
+## Compiler implementations
+
+- `commonasm/`: Python reference compiler
+- `csrc/commonasmc.c`: C AOT compiler
+- `selfhost/compiler.cal`: self-hosting compiler source sketch
+
 ## Example
 
 ```asm
@@ -32,6 +38,13 @@ Compile it:
 ```powershell
 python -m commonasm examples/hello.cas --target x86_64-nasm -o build/hello_x86.asm
 python -m commonasm examples/hello.cas --target riscv64-gnu -o build/hello_rv64.s
+```
+
+Or build and use the C AOT compiler:
+
+```powershell
+gcc csrc/commonasmc.c -o build/commonasmc.exe
+build/commonasmc.exe examples/hello.cas --target x86_64-nasm -o build/hello_x86.asm
 ```
 
 ## Language sketch
@@ -61,4 +74,3 @@ Text:
 - `syscall exit, code`
 
 Virtual registers are `r0` through `r7`. Each backend maps them to native registers.
-

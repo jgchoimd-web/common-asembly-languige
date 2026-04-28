@@ -1,0 +1,255 @@
+module compiler
+
+type Target =
+  X86_64Nasm
+  Riscv64Gnu
+
+type DataString =
+  name: string
+  value: string
+
+type Instruction =
+  op: string
+  args: array<string>
+  line: int
+
+type TextItem =
+  Global(name: string)
+  Label(name: string)
+  Inst(value: Instruction)
+
+type Program =
+  data: array<DataString>
+  text: array<TextItem>
+
+fn main(args: array<string>) -> int {
+  let input = arg_value(args, 0)
+  let target_name = option_value(args, "--target")
+  let output = option_value(args, "-o")
+
+  if input == "" or target_name == "" {
+    print_error("usage: calcc input.cas --target x86_64-nasm|riscv64-gnu [-o output]")
+    return 1
+  }
+
+  let source = read_file(input)
+  let program = parse_program(source)
+  let target = parse_target(target_name)
+  let asm = emit_program(program, target)
+
+  if output == "" {
+    print(asm)
+  } else {
+    write_file(output, asm)
+  }
+
+  return 0
+}
+
+fn parse_target(name: string) -> Target {
+  if name == "x86_64-nasm" {
+    return X86_64Nasm
+  }
+  if name == "riscv64-gnu" {
+    return Riscv64Gnu
+  }
+  fail("unknown target")
+}
+
+fn parse_program(source: string) -> Program {
+  let program = Program(data: [], text: [])
+  let section = ""
+  let lines = split_lines(source)
+  let line_no = 0
+
+  while line_no < len(lines) {
+    let raw = lines[line_no]
+    let line = trim(strip_comment(raw))
+    line_no = line_no + 1
+
+    if line == "" {
+      continue
+    }
+    if line == ".data" {
+      section = "data"
+      continue
+    }
+    if line == ".text" {
+      section = "text"
+      continue
+    }
+    if section == "data" {
+      push(program.data, parse_data_string(line, line_no))
+      continue
+    }
+    if section == "text" {
+      push(program.text, parse_text_item(line, line_no))
+      continue
+    }
+
+    fail_at(line_no, "expected .data or .text")
+  }
+
+  return program
+}
+
+fn parse_data_string(line: string, line_no: int) -> DataString {
+  let colon = index_of(line, ":")
+  if colon < 0 {
+    fail_at(line_no, "expected name: string \"text\"")
+  }
+
+  let name = trim(slice(line, 0, colon))
+  let rest = trim(slice(line, colon + 1, len(line)))
+  if not starts_with(rest, "string ") {
+    fail_at(line_no, "expected string data")
+  }
+
+  return DataString(name: name, value: parse_string_literal(trim(slice(rest, 7, len(rest)))))
+}
+
+fn parse_text_item(line: string, line_no: int) -> TextItem {
+  if ends_with(line, ":") {
+    return Label(name: slice(line, 0, len(line) - 1))
+  }
+  if starts_with(line, "global ") {
+    return Global(name: trim(slice(line, 7, len(line))))
+  }
+
+  let first_space = index_of_whitespace(line)
+  if first_space < 0 {
+    return Inst(value: Instruction(op: line, args: [], line: line_no))
+  }
+
+  let op = slice(line, 0, first_space)
+  let args = split_args(slice(line, first_space + 1, len(line)))
+  return Inst(value: Instruction(op: op, args: args, line: line_no))
+}
+
+fn emit_program(program: Program, target: Target) -> string {
+  let out = ""
+
+  if target == X86_64Nasm {
+    out = out + "default rel\n"
+    if len(program.data) > 0 {
+      out = out + "\nsection .data\n"
+      out = out + emit_data(program.data, "db")
+    }
+    out = out + "\nsection .text\n"
+  } else {
+    if len(program.data) > 0 {
+      out = out + ".section .data\n"
+      out = out + emit_data(program.data, ".byte")
+    }
+    out = out + "\n.section .text\n"
+  }
+
+  let i = 0
+  while i < len(program.text) {
+    out = out + emit_text_item(program.text[i], target)
+    i = i + 1
+  }
+
+  return out
+}
+
+fn emit_data(items: array<DataString>, directive: string) -> string {
+  let out = ""
+  let i = 0
+  while i < len(items) {
+    out = out + items[i].name + ": " + directive + " " + bytes_csv(items[i].value) + "\n"
+    i = i + 1
+  }
+  return out
+}
+
+fn emit_text_item(item: TextItem, target: Target) -> string {
+  match item {
+    Global(name) => {
+      if target == X86_64Nasm {
+        return "global " + name + "\n"
+      }
+      return ".globl " + name + "\n"
+    }
+    Label(name) => {
+      return name + ":\n"
+    }
+    Inst(value) => {
+      return emit_instruction(value, target)
+    }
+  }
+}
+
+fn emit_instruction(ins: Instruction, target: Target) -> string {
+  if ins.op == "syscall" {
+    return emit_syscall(ins, target)
+  }
+
+  if target == X86_64Nasm {
+    return emit_x86_instruction(ins)
+  }
+
+  return emit_riscv_instruction(ins)
+}
+
+fn emit_x86_instruction(ins: Instruction) -> string {
+  if ins.op == "mov" {
+    return "  mov " + x86_reg(ins.args[0]) + ", " + x86_operand(ins.args[1]) + "\n"
+  }
+  if ins.op == "load_addr" {
+    return "  lea " + x86_reg(ins.args[0]) + ", [rel " + ins.args[1] + "]\n"
+  }
+  if ins.op == "add" or ins.op == "sub" {
+    return "  " + ins.op + " " + x86_reg(ins.args[0]) + ", " + x86_operand(ins.args[1]) + "\n"
+  }
+  if ins.op == "jmp" or ins.op == "call" {
+    return "  " + ins.op + " " + ins.args[0] + "\n"
+  }
+  if ins.op == "ret" {
+    return "  ret\n"
+  }
+  fail_at(ins.line, "unsupported x86 instruction")
+}
+
+fn emit_riscv_instruction(ins: Instruction) -> string {
+  if ins.op == "mov" {
+    if is_virtual_reg(ins.args[1]) {
+      return "  mv " + riscv_reg(ins.args[0]) + ", " + riscv_reg(ins.args[1]) + "\n"
+    }
+    return "  li " + riscv_reg(ins.args[0]) + ", " + ins.args[1] + "\n"
+  }
+  if ins.op == "load_addr" {
+    return "  la " + riscv_reg(ins.args[0]) + ", " + ins.args[1] + "\n"
+  }
+  if ins.op == "jmp" {
+    return "  j " + ins.args[0] + "\n"
+  }
+  if ins.op == "call" {
+    return "  call " + ins.args[0] + "\n"
+  }
+  if ins.op == "ret" {
+    return "  ret\n"
+  }
+  fail_at(ins.line, "unsupported riscv instruction")
+}
+
+fn emit_syscall(ins: Instruction, target: Target) -> string {
+  let name = ins.args[0]
+  if target == X86_64Nasm {
+    if name == "write" {
+      return emit_x86_syscall(1, slice_array(ins.args, 1, len(ins.args)))
+    }
+    if name == "exit" {
+      return emit_x86_syscall(60, slice_array(ins.args, 1, len(ins.args)))
+    }
+  } else {
+    if name == "write" {
+      return emit_riscv_syscall(64, slice_array(ins.args, 1, len(ins.args)))
+    }
+    if name == "exit" {
+      return emit_riscv_syscall(93, slice_array(ins.args, 1, len(ins.args)))
+    }
+  }
+  fail_at(ins.line, "unknown syscall")
+}
+

@@ -1,0 +1,64 @@
+# CommonASM
+
+CommonASM is a tiny target-neutral assembly language that compiles into real assembly dialects.
+
+It is meant as a middle layer for a future programming language compiler:
+
+```text
+your language -> CommonASM -> x86_64 / riscv64 / more backends later
+```
+
+## Supported targets
+
+- `x86_64-nasm`: Linux x86-64, NASM syntax
+- `riscv64-gnu`: Linux RISC-V 64, GNU assembler syntax
+
+## Example
+
+```asm
+.data
+msg: string "Hello from CommonASM\n"
+
+.text
+global _start
+
+_start:
+  syscall write, 1, msg, 21
+  syscall exit, 0
+```
+
+Compile it:
+
+```powershell
+python -m commonasm examples/hello.cas --target x86_64-nasm -o build/hello_x86.asm
+python -m commonasm examples/hello.cas --target riscv64-gnu -o build/hello_rv64.s
+```
+
+## Language sketch
+
+Sections:
+
+- `.data`
+- `.text`
+
+Data:
+
+- `name: string "text\n"`
+
+Text:
+
+- `global _start`
+- `label:`
+- `mov r0, 123`
+- `mov r1, r0`
+- `load_addr r0, label`
+- `add r0, r1`
+- `sub r0, 1`
+- `jmp label`
+- `call label`
+- `ret`
+- `syscall write, fd, buffer, length`
+- `syscall exit, code`
+
+Virtual registers are `r0` through `r7`. Each backend maps them to native registers.
+

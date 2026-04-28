@@ -1,0 +1,9 @@
+[project]
+name = "commonasm"
+version = "0.1.0"
+description = "A tiny common assembly language that compiles to multiple assembly syntaxes."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

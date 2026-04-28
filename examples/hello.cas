@@ -1,0 +1,10 @@
+.data
+msg: string "Hello from CommonASM\n"
+
+.text
+global _start
+
+_start:
+  syscall write, 1, msg, 21
+  syscall exit, 0
+

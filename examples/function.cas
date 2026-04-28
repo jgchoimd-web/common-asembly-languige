@@ -1,0 +1,21 @@
+.text
+global _start
+
+func add_two
+  enter 0
+  add r0, 2
+  leave
+  ret
+endfunc
+
+_start:
+  mov r0, 40
+  push r0
+  pop r0
+  call add_two
+  cmp r0, 42
+  je ok
+  syscall exit, 1
+
+ok:
+  syscall exit, 0

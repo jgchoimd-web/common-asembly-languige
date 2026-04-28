@@ -1,6 +1,6 @@
 # CommonASM
 
-CommonASM is a tiny target-neutral assembly language that compiles into real assembly dialects.
+CommonASM is a portable assembly IR that compiles into real assembly dialects.
 
 It is meant as a middle layer for a future programming language compiler:
 
@@ -48,12 +48,20 @@ build/commonasmc.exe examples/hello.cas --target riscv64-gnu -o build/hello_rv64
 Sections:
 
 - `.data`
+- `.rodata`
+- `.bss`
 - `.text`
 
 Data:
 
 - `name: string "text\n"`
 - `name: bytes 1, 2, 255`
+- `name: byte 1`
+- `name: word 1024`
+- `name: dword 65536`
+- `name: qword 123456`
+- `name: zero 64`
+- `align 8`
 
 Constants:
 
@@ -63,16 +71,34 @@ Constants:
 Text:
 
 - `global _start`
+- `extern puts`
 - `label:`
+- `func name`
+- `endfunc`
+- `enter 32`
+- `leave`
 - `mov r0, 123`
 - `mov r1, r0`
 - `load_addr r0, label`
-- `load r0, label`
-- `store label, r0`
+- `load.q r0, [label]`
+- `load.d r0, [r1 + 8]`
+- `store.q [label], r0`
+- `store.b [r1], 65`
 - `add r0, r1`
 - `sub r0, 1`
 - `mul r0, 2`
 - `div r0, r1`
+- `mod r0, 10`
+- `neg r0`
+- `inc r0`
+- `dec r0`
+- `and r0, 255`
+- `or r0, r1`
+- `xor r0, 1`
+- `not r0`
+- `shl r0, 3`
+- `shr r0, 1`
+- `sar r0, 1`
 - `push r0`
 - `pop r1`
 - `cmp r0, 10`
@@ -82,11 +108,18 @@ Text:
 - `jl label`
 - `jge label`
 - `jle label`
+- `ja label`
+- `jb label`
+- `jae label`
+- `jbe label`
 - `jmp label`
 - `call label`
 - `ret`
+- `syscall read, fd, buffer, length`
 - `syscall write, fd, buffer, length`
+- `syscall open, path, flags, mode`
+- `syscall close, fd`
 - `syscall exit, code`
 
-Virtual registers are `r0` through `r7`. Each backend maps them to native registers.
+Virtual registers are `r0` through `r15`. Each backend maps them to native registers.
 `cmp a, b` records `a - b` for the following conditional jump.

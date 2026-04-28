@@ -11,13 +11,44 @@ typedef struct {
     size_t cap;
 } Buffer;
 
-static const char *x86_regs[] = {"rbx", "r12", "r13", "r14", "r15", "r8", "r9", "r10"};
-static const char *rv_regs[] = {"t0", "t1", "t2", "t3", "t4", "t5", "t6", "s1"};
-static char known_constants[128][64];
+typedef struct {
+    char base[64];
+    char symbol[128];
+    long offset;
+    bool has_base;
+    bool has_symbol;
+} Address;
+
+static const char *x86_regs[] = {
+    "rbx", "r12", "r13", "r14", "r15", "r8", "r9", "r10",
+    "rcx", "rdx", "rsi", "rdi", "rbp", "rax", "r11", "rsp"
+};
+static const char *x86_regs_d[] = {
+    "ebx", "r12d", "r13d", "r14d", "r15d", "r8d", "r9d", "r10d",
+    "ecx", "edx", "esi", "edi", "ebp", "eax", "r11d", "esp"
+};
+static const char *x86_regs_w[] = {
+    "bx", "r12w", "r13w", "r14w", "r15w", "r8w", "r9w", "r10w",
+    "cx", "dx", "si", "di", "bp", "ax", "r11w", "sp"
+};
+static const char *x86_regs_b[] = {
+    "bl", "r12b", "r13b", "r14b", "r15b", "r8b", "r9b", "r10b",
+    "cl", "dl", "sil", "dil", "bpl", "al", "r11b", "spl"
+};
+static const char *rv_regs[] = {
+    "t0", "t1", "t2", "t3", "t4", "t5", "t6", "s1",
+    "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9"
+};
+static char known_constants[256][64];
 static int known_constant_count = 0;
 
 static void die(const char *message) {
     fprintf(stderr, "commonasmc: error: %s\n", message);
+    exit(1);
+}
+
+static void line_error(int line_no, const char *op, const char *message) {
+    fprintf(stderr, "commonasmc: error: line %d: %s: %s\n", line_no, op, message);
     exit(1);
 }
 
@@ -27,13 +58,6 @@ static void *xmalloc(size_t size) {
         die("out of memory");
     }
     return ptr;
-}
-
-static char *xstrdup(const char *text) {
-    size_t len = strlen(text);
-    char *copy = xmalloc(len + 1);
-    memcpy(copy, text, len + 1);
-    return copy;
 }
 
 static void buf_init(Buffer *buf) {
@@ -61,7 +85,7 @@ static void buf_append(Buffer *buf, const char *text) {
 }
 
 static void buf_appendf(Buffer *buf, const char *fmt, const char *a, const char *b, const char *c) {
-    char tmp[1024];
+    char tmp[2048];
     int written = snprintf(tmp, sizeof(tmp), fmt, a ? a : "", b ? b : "", c ? c : "");
     if (written < 0 || (size_t)written >= sizeof(tmp)) {
         die("generated line is too long");
@@ -125,6 +149,7 @@ static char *trim(char *text) {
 static void strip_comment(char *line) {
     bool in_string = false;
     bool escaped = false;
+    int bracket_depth = 0;
     for (size_t i = 0; line[i]; i++) {
         char ch = line[i];
         if (escaped) {
@@ -139,7 +164,12 @@ static void strip_comment(char *line) {
             in_string = !in_string;
             continue;
         }
-        if (!in_string && (ch == ';' || ch == '#')) {
+        if (!in_string && ch == '[') {
+            bracket_depth++;
+        } else if (!in_string && ch == ']' && bracket_depth > 0) {
+            bracket_depth--;
+        }
+        if (!in_string && bracket_depth == 0 && (ch == ';' || ch == '#')) {
             line[i] = '\0';
             return;
         }
@@ -153,8 +183,35 @@ static bool is_int(const char *text) {
     return errno == 0 && end && *end == '\0' && end != text;
 }
 
+static long parse_int_or_die(const char *text, int line_no, const char *op) {
+    char *end = NULL;
+    long value;
+    errno = 0;
+    value = strtol(text, &end, 0);
+    if (errno != 0 || !end || *end != '\0' || end == text) {
+        line_error(line_no, op, "expected integer");
+    }
+    return value;
+}
+
+static bool is_symbol_char(char ch) {
+    return isalnum((unsigned char)ch) || ch == '_' || ch == '.';
+}
+
+static bool is_symbol(const char *text) {
+    if (!text || (!isalpha((unsigned char)text[0]) && text[0] != '_' && text[0] != '.')) {
+        return false;
+    }
+    for (size_t i = 1; text[i]; i++) {
+        if (!is_symbol_char(text[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void remember_constant(const char *name) {
-    if (known_constant_count >= 128) {
+    if (known_constant_count >= 256) {
         die("too many constants");
     }
     snprintf(known_constants[known_constant_count], sizeof(known_constants[known_constant_count]), "%s", name);
@@ -171,181 +228,325 @@ static bool is_known_constant(const char *name) {
 }
 
 static int virtual_reg_index(const char *name) {
-    if (name[0] == 'r' && name[1] >= '0' && name[1] <= '7' && name[2] == '\0') {
-        return name[1] - '0';
+    if (name[0] == 'r' && isdigit((unsigned char)name[1])) {
+        char *end = NULL;
+        long value = strtol(name + 1, &end, 10);
+        if (end && *end == '\0' && value >= 0 && value <= 15) {
+            return (int)value;
+        }
     }
     return -1;
 }
 
-static const char *x86_operand(const char *value) {
-    int reg = virtual_reg_index(value);
-    if (reg >= 0) {
-        return x86_regs[reg];
-    }
-    return value;
-}
-
-static const char *x86_address(const char *value) {
-    int reg = virtual_reg_index(value);
-    static char address[64];
-    if (reg >= 0) {
-        snprintf(address, sizeof(address), "[%s]", x86_regs[reg]);
-    } else {
-        snprintf(address, sizeof(address), "[rel %s]", value);
-    }
-    return address;
-}
-
-static const char *x86_reg(const char *value, int line_no) {
+static const char *x86_reg(const char *value, int line_no, const char *op) {
     int reg = virtual_reg_index(value);
     if (reg < 0) {
-        fprintf(stderr, "commonasmc: error: line %d: expected virtual register r0-r7\n", line_no);
-        exit(1);
+        line_error(line_no, op, "expected virtual register r0-r15");
     }
     return x86_regs[reg];
 }
 
-static const char *rv_reg(const char *value, int line_no) {
+static const char *x86_reg_sized(const char *value, const char *size, int line_no, const char *op) {
     int reg = virtual_reg_index(value);
     if (reg < 0) {
-        fprintf(stderr, "commonasmc: error: line %d: expected virtual register r0-r7\n", line_no);
-        exit(1);
+        line_error(line_no, op, "expected virtual register r0-r15");
+    }
+    if (strcmp(size, "b") == 0) return x86_regs_b[reg];
+    if (strcmp(size, "w") == 0) return x86_regs_w[reg];
+    if (strcmp(size, "d") == 0) return x86_regs_d[reg];
+    return x86_regs[reg];
+}
+
+static const char *x86_rax_sized(const char *size) {
+    if (strcmp(size, "b") == 0) return "al";
+    if (strcmp(size, "w") == 0) return "ax";
+    if (strcmp(size, "d") == 0) return "eax";
+    return "rax";
+}
+
+static const char *rv_reg(const char *value, int line_no, const char *op) {
+    int reg = virtual_reg_index(value);
+    if (reg < 0) {
+        line_error(line_no, op, "expected virtual register r0-r15");
     }
     return rv_regs[reg];
 }
 
-static bool is_condition_jump(const char *op) {
-    return strcmp(op, "je") == 0 || strcmp(op, "jne") == 0 ||
-           strcmp(op, "jg") == 0 || strcmp(op, "jl") == 0 ||
-           strcmp(op, "jge") == 0 || strcmp(op, "jle") == 0;
+static const char *size_suffix_or_default(const char *op, char *base_op, size_t base_size) {
+    const char *dot = strchr(op, '.');
+    if (!dot) {
+        snprintf(base_op, base_size, "%s", op);
+        return "q";
+    }
+    snprintf(base_op, base_size, "%.*s", (int)(dot - op), op);
+    if (strcmp(dot + 1, "b") == 0 || strcmp(dot + 1, "w") == 0 ||
+        strcmp(dot + 1, "d") == 0 || strcmp(dot + 1, "q") == 0) {
+        return dot + 1;
+    }
+    return NULL;
+}
+
+static const char *x86_size_word(const char *size) {
+    if (strcmp(size, "b") == 0) return "byte";
+    if (strcmp(size, "w") == 0) return "word";
+    if (strcmp(size, "d") == 0) return "dword";
+    return "qword";
+}
+
+static const char *rv_load_op(const char *size) {
+    if (strcmp(size, "b") == 0) return "lb";
+    if (strcmp(size, "w") == 0) return "lh";
+    if (strcmp(size, "d") == 0) return "lw";
+    return "ld";
+}
+
+static const char *rv_store_op(const char *size) {
+    if (strcmp(size, "b") == 0) return "sb";
+    if (strcmp(size, "w") == 0) return "sh";
+    if (strcmp(size, "d") == 0) return "sw";
+    return "sd";
+}
+
+static const char *x86_operand(const char *value, int line_no, const char *op) {
+    int reg = virtual_reg_index(value);
+    if (reg >= 0) {
+        return x86_regs[reg];
+    }
+    if (is_int(value) || is_symbol(value) || is_known_constant(value)) {
+        return value;
+    }
+    line_error(line_no, op, "expected register, integer, symbol, or constant");
+    return value;
 }
 
 static int split_args(char *arg_text, char **args, int max_args) {
     int count = 0;
+    int bracket_depth = 0;
+    bool in_string = false;
     char *cursor = arg_text;
+    char *start = arg_text;
     while (*cursor && count < max_args) {
-        char *comma = strchr(cursor, ',');
-        if (comma) {
-            *comma = '\0';
+        if (*cursor == '"') {
+            in_string = !in_string;
+        } else if (!in_string && *cursor == '[') {
+            bracket_depth++;
+        } else if (!in_string && *cursor == ']' && bracket_depth > 0) {
+            bracket_depth--;
+        } else if (!in_string && bracket_depth == 0 && *cursor == ',') {
+            *cursor = '\0';
+            args[count++] = trim(start);
+            start = cursor + 1;
         }
-        args[count++] = trim(cursor);
-        if (!comma) {
-            break;
-        }
-        cursor = comma + 1;
+        cursor++;
+    }
+    if (*trim(start) && count < max_args) {
+        args[count++] = trim(start);
     }
     return count;
 }
 
-static void emit_data(Buffer *data, Buffer *constants, char *line, int line_no, const char *target) {
+static bool parse_address(const char *text, Address *addr) {
+    char tmp[256];
+    char *expr;
+    char *sign = NULL;
+    memset(addr, 0, sizeof(*addr));
+    snprintf(tmp, sizeof(tmp), "%s", text);
+    expr = trim(tmp);
+    if (expr[0] == '[') {
+        size_t len = strlen(expr);
+        if (len < 3 || expr[len - 1] != ']') {
+            return false;
+        }
+        expr[len - 1] = '\0';
+        expr = trim(expr + 1);
+    }
+    for (char *p = expr + 1; *p; p++) {
+        if (*p == '+' || *p == '-') {
+            sign = p;
+            break;
+        }
+    }
+    if (sign) {
+        char sign_char = *sign;
+        *sign = '\0';
+        addr->offset = strtol(trim(sign + 1), NULL, 0);
+        if (sign_char == '-') {
+            addr->offset = -addr->offset;
+        }
+    }
+    expr = trim(expr);
+    if (virtual_reg_index(expr) >= 0) {
+        snprintf(addr->base, sizeof(addr->base), "%s", expr);
+        addr->has_base = true;
+    } else if (is_symbol(expr)) {
+        snprintf(addr->symbol, sizeof(addr->symbol), "%s", expr);
+        addr->has_symbol = true;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+static void x86_format_address(const char *text, char *out, size_t out_size, int line_no, const char *op) {
+    Address addr;
+    if (!parse_address(text, &addr)) {
+        line_error(line_no, op, "expected address like [r0 + 8] or [symbol + 8]");
+    }
+    if (addr.has_base) {
+        snprintf(out, out_size, "[%s%s%ld]", x86_reg(addr.base, line_no, op), addr.offset < 0 ? "" : "+", addr.offset);
+    } else {
+        snprintf(out, out_size, "[rel %s%s%ld]", addr.symbol, addr.offset < 0 ? "" : "+", addr.offset);
+    }
+    if (addr.offset == 0) {
+        if (addr.has_base) snprintf(out, out_size, "[%s]", x86_reg(addr.base, line_no, op));
+        else snprintf(out, out_size, "[rel %s]", addr.symbol);
+    }
+}
+
+static void rv_emit_address_setup(Buffer *text, const char *addr_text, const char *scratch, int line_no, const char *op) {
+    Address addr;
+    char offset[64];
+    if (!parse_address(addr_text, &addr)) {
+        line_error(line_no, op, "expected address like [r0 + 8] or [symbol + 8]");
+    }
+    snprintf(offset, sizeof(offset), "%ld", addr.offset);
+    if (addr.has_base) {
+        buf_appendf(text, "%s", "", NULL, NULL);
+    } else {
+        if (addr.offset == 0) {
+            buf_appendf(text, "  la %s, %s\n", scratch, addr.symbol, NULL);
+        } else {
+            buf_appendf(text, "  la %s, %s\n", scratch, addr.symbol, NULL);
+            buf_appendf(text, "  addi %s, %s, ", scratch, scratch, NULL);
+            buf_append(text, offset);
+            buf_append(text, "\n");
+        }
+    }
+}
+
+static const char *rv_address_base(const char *addr_text, const char *scratch, int line_no, const char *op, long *offset) {
+    Address addr;
+    if (!parse_address(addr_text, &addr)) {
+        line_error(line_no, op, "expected address like [r0 + 8] or [symbol + 8]");
+    }
+    *offset = addr.has_base ? addr.offset : 0;
+    return addr.has_base ? rv_reg(addr.base, line_no, op) : scratch;
+}
+
+static void emit_data_line(Buffer *out, Buffer *constants, char *line, int line_no, const char *target, const char *section) {
     char *colon = strchr(line, ':');
-    char *kind;
-    char *quote;
     char *name;
+    char *kind;
+    const bool x86 = strcmp(target, "x86_64-nasm") == 0;
+    if (strncmp(line, "align ", 6) == 0) {
+        const char *value = trim(line + 6);
+        buf_appendf(out, x86 ? "align %s\n" : ".balign %s\n", value, NULL, NULL);
+        return;
+    }
     if (!colon) {
-        fprintf(stderr, "commonasmc: error: line %d: expected name: string \"text\"\n", line_no);
-        exit(1);
+        line_error(line_no, "data", "expected name: directive");
     }
     *colon = '\0';
     name = trim(line);
     kind = trim(colon + 1);
-    if (strncmp(kind, "bytes", 5) == 0 && isspace((unsigned char)kind[5])) {
-        char *values = trim(kind + 5);
-        buf_appendf(data, "%s: %s ", name, strcmp(target, "x86_64-nasm") == 0 ? "db" : ".byte", NULL);
-        buf_append(data, values);
-        buf_append(data, "\n");
+    if (strncmp(kind, "string", 6) == 0 && isspace((unsigned char)kind[6])) {
+        char *quote = trim(kind + 6);
+        int byte_count = 0;
+        if (*quote != '"') {
+            line_error(line_no, "string", "expected string literal");
+        }
+        buf_appendf(out, "%s: %s ", name, x86 ? "db" : ".byte", NULL);
+        quote++;
+        for (size_t i = 0; quote[i] && quote[i] != '"'; i++) {
+            unsigned char ch = (unsigned char)quote[i];
+            char num[32];
+            if (ch == '\\') {
+                i++;
+                if (quote[i] == 'n') ch = '\n';
+                else if (quote[i] == 't') ch = '\t';
+                else if (quote[i] == '0') ch = '\0';
+                else ch = (unsigned char)quote[i];
+            }
+            snprintf(num, sizeof(num), "%s%u", byte_count == 0 ? "" : ", ", ch);
+            buf_append(out, num);
+            byte_count++;
+        }
+        buf_append(out, "\n");
+        char len_value[32];
+        char len_name[128];
+        snprintf(len_value, sizeof(len_value), "%d", byte_count);
+        snprintf(len_name, sizeof(len_name), "%s_len", name);
+        remember_constant(len_name);
+        buf_appendf(constants, x86 ? "%s_len equ %s\n" : ".equ %s_len, %s\n", name, len_value, NULL);
         return;
     }
-    if (strncmp(kind, "string", 6) != 0 || !isspace((unsigned char)kind[6])) {
-        fprintf(stderr, "commonasmc: error: line %d: expected string data\n", line_no);
-        exit(1);
-    }
-    quote = trim(kind + 6);
-    if (*quote != '"') {
-        fprintf(stderr, "commonasmc: error: line %d: expected string literal\n", line_no);
-        exit(1);
-    }
-    buf_appendf(data, "%s: %s ", name, strcmp(target, "x86_64-nasm") == 0 ? "db" : ".byte", NULL);
-    quote++;
-    int byte_count = 0;
-    for (size_t i = 0; quote[i] && quote[i] != '"'; i++) {
-        unsigned char ch = (unsigned char)quote[i];
-        char num[32];
-        if (ch == '\\') {
-            i++;
-            if (quote[i] == 'n') {
-                ch = '\n';
-            } else if (quote[i] == 't') {
-                ch = '\t';
-            } else {
-                ch = (unsigned char)quote[i];
-            }
+    if (strncmp(kind, "zero", 4) == 0 && isspace((unsigned char)kind[4])) {
+        const char *value = trim(kind + 4);
+        if (x86 && strcmp(section, "bss") == 0) {
+            buf_appendf(out, "%s: resb %s\n", name, value, NULL);
+        } else if (x86) {
+            buf_appendf(out, "%s: times %s db 0\n", name, value, NULL);
+        } else {
+            buf_appendf(out, "%s: .zero %s\n", name, value, NULL);
         }
-        snprintf(num, sizeof(num), "%s%u", byte_count == 0 ? "" : ", ", ch);
-        buf_append(data, num);
-        byte_count++;
+        return;
     }
-    buf_append(data, "\n");
-    char len_value[32];
-    char len_name[128];
-    snprintf(len_value, sizeof(len_value), "%d", byte_count);
-    snprintf(len_name, sizeof(len_name), "%s_len", name);
-    remember_constant(len_name);
-    if (strcmp(target, "x86_64-nasm") == 0) {
-        buf_appendf(constants, "%s_len equ %s\n", name, len_value, NULL);
-    } else {
-        buf_appendf(constants, ".equ %s_len, %s\n", name, len_value, NULL);
+    const char *cas_dir = NULL;
+    const char *x86_dir = NULL;
+    const char *rv_dir = NULL;
+    if (strncmp(kind, "bytes", 5) == 0 && isspace((unsigned char)kind[5])) {
+        cas_dir = "bytes"; x86_dir = "db"; rv_dir = ".byte"; kind = trim(kind + 5);
+    } else if (strncmp(kind, "byte", 4) == 0 && isspace((unsigned char)kind[4])) {
+        cas_dir = "byte"; x86_dir = "db"; rv_dir = ".byte"; kind = trim(kind + 4);
+    } else if (strncmp(kind, "word", 4) == 0 && isspace((unsigned char)kind[4])) {
+        cas_dir = "word"; x86_dir = "dw"; rv_dir = ".word"; kind = trim(kind + 4);
+    } else if (strncmp(kind, "dword", 5) == 0 && isspace((unsigned char)kind[5])) {
+        cas_dir = "dword"; x86_dir = "dd"; rv_dir = ".long"; kind = trim(kind + 5);
+    } else if (strncmp(kind, "qword", 5) == 0 && isspace((unsigned char)kind[5])) {
+        cas_dir = "qword"; x86_dir = "dq"; rv_dir = ".quad"; kind = trim(kind + 5);
     }
+    if (!cas_dir) {
+        line_error(line_no, "data", "expected string, bytes, byte, word, dword, qword, zero, or align");
+    }
+    buf_appendf(out, "%s: %s ", name, x86 ? x86_dir : rv_dir, NULL);
+    buf_append(out, kind);
+    buf_append(out, "\n");
 }
 
 static void emit_x86_syscall(Buffer *text, char **args, int argc, int line_no) {
     const char *arg_regs[] = {"rdi", "rsi", "rdx", "r10", "r8", "r9"};
-    int number;
-    if (argc < 1) {
-        fprintf(stderr, "commonasmc: error: line %d: syscall needs a name\n", line_no);
-        exit(1);
-    }
-    if (strcmp(args[0], "write") == 0) {
-        number = 1;
-    } else if (strcmp(args[0], "exit") == 0) {
-        number = 60;
-    } else {
-        fprintf(stderr, "commonasmc: error: line %d: unknown syscall\n", line_no);
-        exit(1);
-    }
+    int number = -1;
+    if (argc < 1) line_error(line_no, "syscall", "needs a syscall name");
+    if (strcmp(args[0], "read") == 0) number = 0;
+    else if (strcmp(args[0], "write") == 0) number = 1;
+    else if (strcmp(args[0], "open") == 0) number = 2;
+    else if (strcmp(args[0], "close") == 0) number = 3;
+    else if (strcmp(args[0], "exit") == 0) number = 60;
+    else line_error(line_no, "syscall", "unknown syscall");
     char num[32];
     snprintf(num, sizeof(num), "%d", number);
     buf_appendf(text, "  mov rax, %s\n", num, NULL, NULL);
-    for (int i = 1; i < argc; i++) {
-        buf_appendf(text, "  mov %s, %s\n", arg_regs[i - 1], x86_operand(args[i]), NULL);
+    for (int i = 1; i < argc && i <= 6; i++) {
+        buf_appendf(text, "  mov %s, %s\n", arg_regs[i - 1], x86_operand(args[i], line_no, "syscall"), NULL);
     }
     buf_append(text, "  syscall\n");
 }
 
 static void emit_rv_syscall(Buffer *text, char **args, int argc, int line_no) {
     const char *arg_regs[] = {"a0", "a1", "a2", "a3", "a4", "a5"};
-    int number;
-    if (argc < 1) {
-        fprintf(stderr, "commonasmc: error: line %d: syscall needs a name\n", line_no);
-        exit(1);
-    }
-    if (strcmp(args[0], "write") == 0) {
-        number = 64;
-    } else if (strcmp(args[0], "exit") == 0) {
-        number = 93;
-    } else {
-        fprintf(stderr, "commonasmc: error: line %d: unknown syscall\n", line_no);
-        exit(1);
-    }
-    for (int i = 1; i < argc; i++) {
+    int number = -1;
+    if (argc < 1) line_error(line_no, "syscall", "needs a syscall name");
+    if (strcmp(args[0], "read") == 0) number = 63;
+    else if (strcmp(args[0], "write") == 0) number = 64;
+    else if (strcmp(args[0], "open") == 0) number = 1024;
+    else if (strcmp(args[0], "close") == 0) number = 57;
+    else if (strcmp(args[0], "exit") == 0) number = 93;
+    else line_error(line_no, "syscall", "unknown syscall");
+    for (int i = 1; i < argc && i <= 6; i++) {
         int reg = virtual_reg_index(args[i]);
-        if (reg >= 0) {
-            buf_appendf(text, "  mv %s, %s\n", arg_regs[i - 1], rv_regs[reg], NULL);
-        } else if (is_int(args[i]) || is_known_constant(args[i])) {
-            buf_appendf(text, "  li %s, %s\n", arg_regs[i - 1], args[i], NULL);
-        } else {
-            buf_appendf(text, "  la %s, %s\n", arg_regs[i - 1], args[i], NULL);
-        }
+        if (reg >= 0) buf_appendf(text, "  mv %s, %s\n", arg_regs[i - 1], rv_regs[reg], NULL);
+        else if (is_int(args[i]) || is_known_constant(args[i])) buf_appendf(text, "  li %s, %s\n", arg_regs[i - 1], args[i], NULL);
+        else buf_appendf(text, "  la %s, %s\n", arg_regs[i - 1], args[i], NULL);
     }
     char num[32];
     snprintf(num, sizeof(num), "%d", number);
@@ -353,11 +554,212 @@ static void emit_rv_syscall(Buffer *text, char **args, int argc, int line_no) {
     buf_append(text, "  ecall\n");
 }
 
-static void emit_text(Buffer *text, char *line, int line_no, const char *target) {
+static void emit_x86_instruction(Buffer *text, const char *op, const char *size, char **args, int argc, int line_no) {
+    if (strcmp(op, "func") == 0 && argc == 1) {
+        buf_appendf(text, "%s:\n", args[0], NULL, NULL); return;
+    }
+    if (strcmp(op, "endfunc") == 0 && argc == 0) return;
+    if (strcmp(op, "enter") == 0 && argc == 1) {
+        buf_append(text, "  push rbp\n  mov rbp, rsp\n");
+        if (strcmp(args[0], "0") != 0) buf_appendf(text, "  sub rsp, %s\n", args[0], NULL, NULL);
+        return;
+    }
+    if (strcmp(op, "leave") == 0 && argc == 0) {
+        buf_append(text, "  mov rsp, rbp\n  pop rbp\n"); return;
+    }
+    if (strcmp(op, "mov") == 0 && argc == 2) {
+        buf_appendf(text, "  mov %s, %s\n", x86_reg(args[0], line_no, op), x86_operand(args[1], line_no, op), NULL); return;
+    }
+    if (strcmp(op, "load_addr") == 0 && argc == 2) {
+        buf_appendf(text, "  lea %s, [rel %s]\n", x86_reg(args[0], line_no, op), args[1], NULL); return;
+    }
+    if (strcmp(op, "load") == 0 && argc == 2) {
+        char addr[256];
+        x86_format_address(args[1], addr, sizeof(addr), line_no, op);
+        if (strcmp(size, "q") == 0) {
+            buf_appendf(text, "  mov %s, qword ", x86_reg(args[0], line_no, op), NULL, NULL);
+        } else if (strcmp(size, "d") == 0) {
+            buf_appendf(text, "  mov %s, dword ", x86_reg_sized(args[0], size, line_no, op), NULL, NULL);
+        } else {
+            buf_appendf(text, "  movzx %s, %s ", x86_reg(args[0], line_no, op), x86_size_word(size), NULL);
+        }
+        buf_append(text, addr); buf_append(text, "\n"); return;
+    }
+    if (strcmp(op, "store") == 0 && argc == 2) {
+        char addr[256];
+        x86_format_address(args[0], addr, sizeof(addr), line_no, op);
+        if (virtual_reg_index(args[1]) >= 0) {
+            buf_appendf(text, "  mov %s ", x86_size_word(size), NULL, NULL);
+            buf_append(text, addr);
+            buf_appendf(text, ", %s\n", x86_reg_sized(args[1], size, line_no, op), NULL, NULL);
+        } else {
+            buf_appendf(text, "  mov rax, %s\n", x86_operand(args[1], line_no, op), NULL, NULL);
+            buf_appendf(text, "  mov %s ", x86_size_word(size), NULL, NULL);
+            buf_append(text, addr);
+            buf_appendf(text, ", %s\n", x86_rax_sized(size), NULL, NULL);
+        }
+        return;
+    }
+    if ((strcmp(op, "add") == 0 || strcmp(op, "sub") == 0 || strcmp(op, "and") == 0 ||
+         strcmp(op, "or") == 0 || strcmp(op, "xor") == 0 || strcmp(op, "shl") == 0 ||
+         strcmp(op, "shr") == 0 || strcmp(op, "sar") == 0) && argc == 2) {
+        buf_appendf(text, "  %s %s, ", op, x86_reg(args[0], line_no, op), NULL);
+        buf_append(text, x86_operand(args[1], line_no, op)); buf_append(text, "\n"); return;
+    }
+    if ((strcmp(op, "neg") == 0 || strcmp(op, "not") == 0 || strcmp(op, "inc") == 0 || strcmp(op, "dec") == 0) && argc == 1) {
+        buf_appendf(text, "  %s %s\n", op, x86_reg(args[0], line_no, op), NULL); return;
+    }
+    if (strcmp(op, "mul") == 0 && argc == 2) {
+        buf_appendf(text, "  imul %s, ", x86_reg(args[0], line_no, op), NULL, NULL);
+        buf_append(text, x86_operand(args[1], line_no, op)); buf_append(text, "\n"); return;
+    }
+    if ((strcmp(op, "div") == 0 || strcmp(op, "mod") == 0) && argc == 2) {
+        buf_appendf(text, "  mov rax, %s\n  cqo\n", x86_reg(args[0], line_no, op), NULL, NULL);
+        if (virtual_reg_index(args[1]) >= 0) buf_appendf(text, "  idiv %s\n", x86_operand(args[1], line_no, op), NULL, NULL);
+        else {
+            buf_appendf(text, "  mov r11, %s\n", x86_operand(args[1], line_no, op), NULL, NULL);
+            buf_append(text, "  idiv r11\n");
+        }
+        buf_appendf(text, strcmp(op, "mod") == 0 ? "  mov %s, rdx\n" : "  mov %s, rax\n", x86_reg(args[0], line_no, op), NULL, NULL);
+        return;
+    }
+    if (strcmp(op, "cmp") == 0 && argc == 2) {
+        buf_appendf(text, "  cmp %s, ", x86_reg(args[0], line_no, op), NULL, NULL);
+        buf_append(text, x86_operand(args[1], line_no, op)); buf_append(text, "\n"); return;
+    }
+    if ((strcmp(op, "push") == 0 || strcmp(op, "pop") == 0) && argc == 1) {
+        buf_appendf(text, "  %s %s\n", op, strcmp(op, "pop") == 0 ? x86_reg(args[0], line_no, op) : x86_operand(args[0], line_no, op), NULL); return;
+    }
+    if ((strcmp(op, "jmp") == 0 || strcmp(op, "call") == 0 || strcmp(op, "je") == 0 || strcmp(op, "jne") == 0 ||
+         strcmp(op, "jg") == 0 || strcmp(op, "jl") == 0 || strcmp(op, "jge") == 0 || strcmp(op, "jle") == 0 ||
+         strcmp(op, "ja") == 0 || strcmp(op, "jb") == 0 || strcmp(op, "jae") == 0 || strcmp(op, "jbe") == 0) && argc == 1) {
+        buf_appendf(text, "  %s %s\n", op, args[0], NULL); return;
+    }
+    if (strcmp(op, "ret") == 0 && argc == 0) { buf_append(text, "  ret\n"); return; }
+    if (strcmp(op, "syscall") == 0) { emit_x86_syscall(text, args, argc, line_no); return; }
+    line_error(line_no, op, "unsupported instruction or wrong argument count");
+}
+
+static void emit_rv_instruction(Buffer *text, const char *op, const char *size, char **args, int argc, int line_no) {
+    if (strcmp(op, "func") == 0 && argc == 1) { buf_appendf(text, "%s:\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "endfunc") == 0 && argc == 0) return;
+    if (strcmp(op, "enter") == 0 && argc == 1) {
+        buf_append(text, "  addi sp, sp, -16\n  sd ra, 8(sp)\n  sd s0, 0(sp)\n  mv s0, sp\n");
+        if (strcmp(args[0], "0") != 0) {
+            buf_appendf(text, "  addi sp, sp, -%s\n", args[0], NULL, NULL);
+        }
+        return;
+    }
+    if (strcmp(op, "leave") == 0 && argc == 0) {
+        buf_append(text, "  mv sp, s0\n  ld s0, 0(sp)\n  ld ra, 8(sp)\n  addi sp, sp, 16\n"); return;
+    }
+    if (strcmp(op, "mov") == 0 && argc == 2) {
+        int src = virtual_reg_index(args[1]);
+        if (src >= 0) buf_appendf(text, "  mv %s, %s\n", rv_reg(args[0], line_no, op), rv_regs[src], NULL);
+        else buf_appendf(text, "  li %s, %s\n", rv_reg(args[0], line_no, op), args[1], NULL);
+        return;
+    }
+    if (strcmp(op, "load_addr") == 0 && argc == 2) { buf_appendf(text, "  la %s, %s\n", rv_reg(args[0], line_no, op), args[1], NULL); return; }
+    if ((strcmp(op, "load") == 0 || strcmp(op, "store") == 0) && argc == 2) {
+        long off = 0;
+        const char *base;
+        if (strcmp(op, "load") == 0) {
+            rv_emit_address_setup(text, args[1], "a6", line_no, op);
+            base = rv_address_base(args[1], "a6", line_no, op, &off);
+            char offstr[32]; snprintf(offstr, sizeof(offstr), "%ld", off);
+            buf_appendf(text, "  %s %s, ", rv_load_op(size), rv_reg(args[0], line_no, op), NULL);
+            buf_append(text, offstr); buf_appendf(text, "(%s)\n", base, NULL, NULL);
+        } else {
+            int src = virtual_reg_index(args[1]);
+            if (src < 0) buf_appendf(text, "  li a7, %s\n", args[1], NULL, NULL);
+            rv_emit_address_setup(text, args[0], "a6", line_no, op);
+            base = rv_address_base(args[0], "a6", line_no, op, &off);
+            char offstr[32]; snprintf(offstr, sizeof(offstr), "%ld", off);
+            buf_appendf(text, "  %s %s, ", rv_store_op(size), src >= 0 ? rv_regs[src] : "a7", NULL);
+            buf_append(text, offstr); buf_appendf(text, "(%s)\n", base, NULL, NULL);
+        }
+        return;
+    }
+    if ((strcmp(op, "add") == 0 || strcmp(op, "sub") == 0 || strcmp(op, "and") == 0 ||
+         strcmp(op, "or") == 0 || strcmp(op, "xor") == 0) && argc == 2) {
+        int src = virtual_reg_index(args[1]);
+        const char *dst = rv_reg(args[0], line_no, op);
+        if (src >= 0) {
+            buf_appendf(text, "  %s %s, %s, ", op, dst, dst);
+            buf_append(text, rv_regs[src]); buf_append(text, "\n");
+        } else if (strcmp(op, "add") == 0 || strcmp(op, "and") == 0 || strcmp(op, "or") == 0 || strcmp(op, "xor") == 0) {
+            const char *immop = strcmp(op, "add") == 0 ? "addi" : (strcmp(op, "and") == 0 ? "andi" : (strcmp(op, "or") == 0 ? "ori" : "xori"));
+            buf_appendf(text, "  %s %s, %s, ", immop, dst, dst);
+            buf_append(text, args[1]); buf_append(text, "\n");
+        } else {
+            buf_appendf(text, "  addi %s, %s, -", dst, dst, NULL);
+            buf_append(text, args[1]); buf_append(text, "\n");
+        }
+        return;
+    }
+    if ((strcmp(op, "shl") == 0 || strcmp(op, "shr") == 0 || strcmp(op, "sar") == 0) && argc == 2) {
+        int src = virtual_reg_index(args[1]);
+        const char *native = strcmp(op, "shl") == 0 ? "sll" : (strcmp(op, "shr") == 0 ? "srl" : "sra");
+        const char *nativei = strcmp(op, "shl") == 0 ? "slli" : (strcmp(op, "shr") == 0 ? "srli" : "srai");
+        if (src >= 0) buf_appendf(text, "  %s %s, %s, ", native, rv_reg(args[0], line_no, op), rv_reg(args[0], line_no, op));
+        else buf_appendf(text, "  %s %s, %s, ", nativei, rv_reg(args[0], line_no, op), rv_reg(args[0], line_no, op));
+        buf_append(text, src >= 0 ? rv_regs[src] : args[1]); buf_append(text, "\n"); return;
+    }
+    if ((strcmp(op, "neg") == 0 || strcmp(op, "not") == 0 || strcmp(op, "inc") == 0 || strcmp(op, "dec") == 0) && argc == 1) {
+        const char *dst = rv_reg(args[0], line_no, op);
+        if (strcmp(op, "neg") == 0) buf_appendf(text, "  neg %s, %s\n", dst, dst, NULL);
+        else if (strcmp(op, "not") == 0) buf_appendf(text, "  not %s, %s\n", dst, dst, NULL);
+        else buf_appendf(text, strcmp(op, "inc") == 0 ? "  addi %s, %s, 1\n" : "  addi %s, %s, -1\n", dst, dst, NULL);
+        return;
+    }
+    if ((strcmp(op, "mul") == 0 || strcmp(op, "div") == 0 || strcmp(op, "mod") == 0) && argc == 2) {
+        int src = virtual_reg_index(args[1]);
+        const char *native = strcmp(op, "mul") == 0 ? "mul" : (strcmp(op, "div") == 0 ? "div" : "rem");
+        if (src < 0) buf_appendf(text, "  li a6, %s\n", args[1], NULL, NULL);
+        buf_appendf(text, "  %s %s, %s, ", native, rv_reg(args[0], line_no, op), rv_reg(args[0], line_no, op));
+        buf_append(text, src >= 0 ? rv_regs[src] : "a6"); buf_append(text, "\n"); return;
+    }
+    if (strcmp(op, "cmp") == 0 && argc == 2) {
+        int src = virtual_reg_index(args[1]);
+        if (src >= 0) {
+            buf_appendf(text, "  sub a6, %s, ", rv_reg(args[0], line_no, op), NULL, NULL);
+            buf_append(text, rv_regs[src]); buf_append(text, "\n");
+        } else {
+            buf_appendf(text, "  li a7, %s\n", args[1], NULL, NULL);
+            buf_appendf(text, "  sub a6, %s, a7\n", rv_reg(args[0], line_no, op), NULL, NULL);
+        }
+        return;
+    }
+    if (strcmp(op, "je") == 0 && argc == 1) { buf_appendf(text, "  beqz a6, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jne") == 0 && argc == 1) { buf_appendf(text, "  bnez a6, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jg") == 0 && argc == 1) { buf_appendf(text, "  bgtz a6, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jl") == 0 && argc == 1) { buf_appendf(text, "  bltz a6, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jge") == 0 && argc == 1) { buf_appendf(text, "  bgez a6, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jle") == 0 && argc == 1) { buf_appendf(text, "  blez a6, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "ja") == 0 && argc == 1) { buf_appendf(text, "  bgtu a6, zero, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jb") == 0 && argc == 1) { buf_appendf(text, "  bltu a6, zero, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jae") == 0 && argc == 1) { buf_appendf(text, "  bgeu a6, zero, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jbe") == 0 && argc == 1) { buf_appendf(text, "  bleu a6, zero, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "push") == 0 && argc == 1) {
+        int src = virtual_reg_index(args[0]);
+        if (src < 0) buf_appendf(text, "  li a6, %s\n", args[0], NULL, NULL);
+        buf_append(text, "  addi sp, sp, -8\n");
+        buf_appendf(text, "  sd %s, 0(sp)\n", src >= 0 ? rv_regs[src] : "a6", NULL, NULL); return;
+    }
+    if (strcmp(op, "pop") == 0 && argc == 1) { buf_appendf(text, "  ld %s, 0(sp)\n  addi sp, sp, 8\n", rv_reg(args[0], line_no, op), NULL, NULL); return; }
+    if (strcmp(op, "jmp") == 0 && argc == 1) { buf_appendf(text, "  j %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "call") == 0 && argc == 1) { buf_appendf(text, "  call %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "ret") == 0 && argc == 0) { buf_append(text, "  ret\n"); return; }
+    if (strcmp(op, "syscall") == 0) { emit_rv_syscall(text, args, argc, line_no); return; }
+    line_error(line_no, op, "unsupported instruction or wrong argument count");
+}
+
+static void emit_text_line(Buffer *text, char *line, int line_no, const char *target) {
     char *space;
-    char *op;
     char *args[16];
     int argc = 0;
+    char base_op[64];
+    const char *size;
     size_t len = strlen(line);
     if (len > 0 && line[len - 1] == ':') {
         buf_appendf(text, "%s\n", line, NULL, NULL);
@@ -368,254 +770,79 @@ static void emit_text(Buffer *text, char *line, int line_no, const char *target)
         buf_appendf(text, strcmp(target, "x86_64-nasm") == 0 ? "global %s\n" : ".globl %s\n", name, NULL, NULL);
         return;
     }
-    space = line;
-    while (*space && !isspace((unsigned char)*space)) {
-        space++;
+    if (strncmp(line, "extern ", 7) == 0) {
+        const char *name = trim(line + 7);
+        buf_appendf(text, strcmp(target, "x86_64-nasm") == 0 ? "extern %s\n" : ".extern %s\n", name, NULL, NULL);
+        return;
     }
+    space = line;
+    while (*space && !isspace((unsigned char)*space)) space++;
     if (*space) {
         *space++ = '\0';
         argc = split_args(space, args, 16);
     }
-    op = line;
-    if (strcmp(target, "x86_64-nasm") == 0) {
-        if (strcmp(op, "mov") == 0 && argc == 2) {
-            buf_appendf(text, "  mov %s, %s\n", x86_reg(args[0], line_no), x86_operand(args[1]), NULL);
-        } else if (strcmp(op, "load_addr") == 0 && argc == 2) {
-            buf_appendf(text, "  lea %s, [rel %s]\n", x86_reg(args[0], line_no), args[1], NULL);
-        } else if ((strcmp(op, "add") == 0 || strcmp(op, "sub") == 0) && argc == 2) {
-            buf_appendf(text, "  %s %s, ", op, x86_reg(args[0], line_no), NULL);
-            buf_append(text, x86_operand(args[1]));
-            buf_append(text, "\n");
-        } else if (strcmp(op, "mul") == 0 && argc == 2) {
-            buf_appendf(text, "  imul %s, ", x86_reg(args[0], line_no), NULL, NULL);
-            buf_append(text, x86_operand(args[1]));
-            buf_append(text, "\n");
-        } else if (strcmp(op, "div") == 0 && argc == 2) {
-            buf_appendf(text, "  mov rax, %s\n", x86_reg(args[0], line_no), NULL, NULL);
-            buf_append(text, "  cqo\n");
-            if (virtual_reg_index(args[1]) >= 0) {
-                buf_appendf(text, "  idiv %s\n", x86_operand(args[1]), NULL, NULL);
-            } else {
-                buf_appendf(text, "  mov r11, %s\n", x86_operand(args[1]), NULL, NULL);
-                buf_append(text, "  idiv r11\n");
-            }
-            buf_appendf(text, "  mov %s, rax\n", x86_reg(args[0], line_no), NULL, NULL);
-        } else if (strcmp(op, "load") == 0 && argc == 2) {
-            buf_appendf(text, "  mov %s, %s\n", x86_reg(args[0], line_no), x86_address(args[1]), NULL);
-        } else if (strcmp(op, "store") == 0 && argc == 2) {
-            if (virtual_reg_index(args[1]) >= 0) {
-                buf_appendf(text, "  mov %s, %s\n", x86_address(args[0]), x86_operand(args[1]), NULL);
-            } else {
-                buf_appendf(text, "  mov r11, %s\n", x86_operand(args[1]), NULL, NULL);
-                buf_appendf(text, "  mov %s, r11\n", x86_address(args[0]), NULL, NULL);
-            }
-        } else if (strcmp(op, "push") == 0 && argc == 1) {
-            buf_appendf(text, "  push %s\n", x86_operand(args[0]), NULL, NULL);
-        } else if (strcmp(op, "pop") == 0 && argc == 1) {
-            buf_appendf(text, "  pop %s\n", x86_reg(args[0], line_no), NULL, NULL);
-        } else if (strcmp(op, "cmp") == 0 && argc == 2) {
-            buf_appendf(text, "  cmp %s, ", x86_reg(args[0], line_no), NULL, NULL);
-            buf_append(text, x86_operand(args[1]));
-            buf_append(text, "\n");
-        } else if (is_condition_jump(op) && argc == 1) {
-            buf_appendf(text, "  %s %s\n", op, args[0], NULL);
-        } else if (strcmp(op, "jmp") == 0 && argc == 1) {
-            buf_appendf(text, "  jmp %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "call") == 0 && argc == 1) {
-            buf_appendf(text, "  call %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "ret") == 0 && argc == 0) {
-            buf_append(text, "  ret\n");
-        } else if (strcmp(op, "syscall") == 0) {
-            emit_x86_syscall(text, args, argc, line_no);
-        } else {
-            fprintf(stderr, "commonasmc: error: line %d: unsupported instruction\n", line_no);
-            exit(1);
-        }
-    } else {
-        if (strcmp(op, "mov") == 0 && argc == 2) {
-            int src = virtual_reg_index(args[1]);
-            if (src >= 0) {
-                buf_appendf(text, "  mv %s, %s\n", rv_reg(args[0], line_no), rv_regs[src], NULL);
-            } else {
-                buf_appendf(text, "  li %s, %s\n", rv_reg(args[0], line_no), args[1], NULL);
-            }
-        } else if (strcmp(op, "load_addr") == 0 && argc == 2) {
-            buf_appendf(text, "  la %s, %s\n", rv_reg(args[0], line_no), args[1], NULL);
-        } else if ((strcmp(op, "add") == 0 || strcmp(op, "sub") == 0) && argc == 2) {
-            int src = virtual_reg_index(args[1]);
-            if (src >= 0) {
-                buf_appendf(text, strcmp(op, "add") == 0 ? "  add %s, %s, " : "  sub %s, %s, ", rv_reg(args[0], line_no), rv_reg(args[0], line_no), NULL);
-                buf_append(text, rv_regs[src]);
-                buf_append(text, "\n");
-            } else if (strcmp(op, "add") == 0) {
-                buf_appendf(text, "  addi %s, %s, ", rv_reg(args[0], line_no), rv_reg(args[0], line_no), NULL);
-                buf_append(text, args[1]);
-                buf_append(text, "\n");
-            } else {
-                buf_appendf(text, "  addi %s, %s, -", rv_reg(args[0], line_no), rv_reg(args[0], line_no), NULL);
-                buf_append(text, args[1]);
-                buf_append(text, "\n");
-            }
-        } else if ((strcmp(op, "mul") == 0 || strcmp(op, "div") == 0) && argc == 2) {
-            int src = virtual_reg_index(args[1]);
-            const char *native_op = strcmp(op, "mul") == 0 ? "mul" : "div";
-            if (src >= 0) {
-                buf_appendf(text, "  %s %s, ", native_op, rv_reg(args[0], line_no), NULL);
-                buf_append(text, rv_reg(args[0], line_no));
-                buf_append(text, ", ");
-                buf_append(text, rv_regs[src]);
-                buf_append(text, "\n");
-            } else {
-                buf_appendf(text, "  li a6, %s\n", args[1], NULL, NULL);
-                buf_appendf(text, "  %s %s, ", native_op, rv_reg(args[0], line_no), NULL);
-                buf_append(text, rv_reg(args[0], line_no));
-                buf_append(text, ", a6\n");
-            }
-        } else if (strcmp(op, "load") == 0 && argc == 2) {
-            int addr = virtual_reg_index(args[1]);
-            if (addr >= 0) {
-                buf_appendf(text, "  ld %s, 0(", rv_reg(args[0], line_no), NULL, NULL);
-                buf_append(text, rv_regs[addr]);
-                buf_append(text, ")\n");
-            } else {
-                buf_appendf(text, "  la a6, %s\n", args[1], NULL, NULL);
-                buf_appendf(text, "  ld %s, 0(a6)\n", rv_reg(args[0], line_no), NULL, NULL);
-            }
-        } else if (strcmp(op, "store") == 0 && argc == 2) {
-            int addr = virtual_reg_index(args[0]);
-            int src = virtual_reg_index(args[1]);
-            if (src < 0) {
-                buf_appendf(text, "  li a6, %s\n", args[1], NULL, NULL);
-            }
-            if (addr >= 0) {
-                buf_appendf(text, "  sd %s, 0(", src >= 0 ? rv_regs[src] : "a6", NULL, NULL);
-                buf_append(text, rv_regs[addr]);
-                buf_append(text, ")\n");
-            } else {
-                buf_appendf(text, "  la a7, %s\n", args[0], NULL, NULL);
-                buf_appendf(text, "  sd %s, 0(a7)\n", src >= 0 ? rv_regs[src] : "a6", NULL, NULL);
-            }
-        } else if (strcmp(op, "push") == 0 && argc == 1) {
-            int src = virtual_reg_index(args[0]);
-            if (src < 0) {
-                buf_appendf(text, "  li a6, %s\n", args[0], NULL, NULL);
-            }
-            buf_append(text, "  addi sp, sp, -8\n");
-            buf_appendf(text, "  sd %s, 0(sp)\n", src >= 0 ? rv_regs[src] : "a6", NULL, NULL);
-        } else if (strcmp(op, "pop") == 0 && argc == 1) {
-            buf_appendf(text, "  ld %s, 0(sp)\n", rv_reg(args[0], line_no), NULL, NULL);
-            buf_append(text, "  addi sp, sp, 8\n");
-        } else if (strcmp(op, "cmp") == 0 && argc == 2) {
-            int src = virtual_reg_index(args[1]);
-            if (src >= 0) {
-                buf_appendf(text, "  sub a6, %s, ", rv_reg(args[0], line_no), NULL, NULL);
-                buf_append(text, rv_regs[src]);
-                buf_append(text, "\n");
-            } else {
-                buf_appendf(text, "  addi a6, %s, -", rv_reg(args[0], line_no), NULL, NULL);
-                buf_append(text, args[1]);
-                buf_append(text, "\n");
-            }
-        } else if (strcmp(op, "je") == 0 && argc == 1) {
-            buf_appendf(text, "  beqz a6, %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "jne") == 0 && argc == 1) {
-            buf_appendf(text, "  bnez a6, %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "jg") == 0 && argc == 1) {
-            buf_appendf(text, "  bgtz a6, %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "jl") == 0 && argc == 1) {
-            buf_appendf(text, "  bltz a6, %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "jge") == 0 && argc == 1) {
-            buf_appendf(text, "  bgez a6, %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "jle") == 0 && argc == 1) {
-            buf_appendf(text, "  blez a6, %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "jmp") == 0 && argc == 1) {
-            buf_appendf(text, "  j %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "call") == 0 && argc == 1) {
-            buf_appendf(text, "  call %s\n", args[0], NULL, NULL);
-        } else if (strcmp(op, "ret") == 0 && argc == 0) {
-            buf_append(text, "  ret\n");
-        } else if (strcmp(op, "syscall") == 0) {
-            emit_rv_syscall(text, args, argc, line_no);
-        } else {
-            fprintf(stderr, "commonasmc: error: line %d: unsupported instruction\n", line_no);
-            exit(1);
-        }
+    size = size_suffix_or_default(line, base_op, sizeof(base_op));
+    if (!size) {
+        line_error(line_no, line, "unknown size suffix");
     }
+    if (strcmp(target, "x86_64-nasm") == 0) emit_x86_instruction(text, base_op, size, args, argc, line_no);
+    else emit_rv_instruction(text, base_op, size, args, argc, line_no);
 }
 
 static Buffer compile_source(char *source, const char *target) {
-    Buffer constants;
-    Buffer data;
-    Buffer text;
-    Buffer out;
+    Buffer constants, data, rodata, bss, text, out;
     char *cursor = source;
-    char *section = NULL;
+    const char *section = NULL;
     int line_no = 0;
-    buf_init(&constants);
-    buf_init(&data);
-    buf_init(&text);
+    const bool x86 = strcmp(target, "x86_64-nasm") == 0;
+    buf_init(&constants); buf_init(&data); buf_init(&rodata); buf_init(&bss); buf_init(&text);
     while (*cursor) {
         char *line = cursor;
         char *newline = strchr(cursor, '\n');
         line_no++;
-        if (newline) {
-            *newline = '\0';
-            cursor = newline + 1;
-        } else {
-            cursor += strlen(cursor);
-        }
+        if (newline) { *newline = '\0'; cursor = newline + 1; }
+        else cursor += strlen(cursor);
         strip_comment(line);
         line = trim(line);
-        if (*line == '\0') {
-            continue;
-        }
-        if (strcmp(line, ".data") == 0 || strcmp(line, ".text") == 0) {
+        if (*line == '\0') continue;
+        if (strcmp(line, ".data") == 0 || strcmp(line, ".rodata") == 0 || strcmp(line, ".bss") == 0 || strcmp(line, ".text") == 0) {
             section = line + 1;
             continue;
         }
         if (strncmp(line, "const ", 6) == 0) {
             char *name = trim(line + 6);
             char *eq = strchr(name, '=');
-            if (!eq) {
-                fprintf(stderr, "commonasmc: error: line %d: expected const NAME = VALUE\n", line_no);
-                exit(1);
-            }
+            if (!eq) line_error(line_no, "const", "expected const NAME = VALUE");
             *eq = '\0';
             name = trim(name);
             char *value = trim(eq + 1);
             remember_constant(name);
-            if (strcmp(target, "x86_64-nasm") == 0) {
-                buf_appendf(&constants, "%s equ %s\n", name, value, NULL);
-            } else {
-                buf_appendf(&constants, ".equ %s, %s\n", name, value, NULL);
-            }
+            buf_appendf(&constants, x86 ? "%s equ %s\n" : ".equ %s, %s\n", name, value, NULL);
             continue;
         }
-        if (!section) {
-            fprintf(stderr, "commonasmc: error: line %d: expected .data or .text\n", line_no);
-            exit(1);
+        if (strncmp(line, "global ", 7) == 0 || strncmp(line, "extern ", 7) == 0) {
+            emit_text_line(&text, line, line_no, target);
+            continue;
         }
-        if (strcmp(section, "data") == 0) {
-            emit_data(&data, &constants, line, line_no, target);
-        } else {
-            emit_text(&text, line, line_no, target);
-        }
+        if (!section) line_error(line_no, "section", "expected .data, .rodata, .bss, or .text");
+        if (strcmp(section, "data") == 0) emit_data_line(&data, &constants, line, line_no, target, section);
+        else if (strcmp(section, "rodata") == 0) emit_data_line(&rodata, &constants, line, line_no, target, section);
+        else if (strcmp(section, "bss") == 0) emit_data_line(&bss, &constants, line, line_no, target, section);
+        else emit_text_line(&text, line, line_no, target);
     }
     buf_init(&out);
-    if (strcmp(target, "x86_64-nasm") == 0) {
+    if (x86) {
         buf_append(&out, "default rel\n");
         buf_append(&out, constants.data);
-        if (data.len) {
-            buf_append(&out, "\nsection .data\n");
-            buf_append(&out, data.data);
-        }
+        if (rodata.len) { buf_append(&out, "\nsection .rodata\n"); buf_append(&out, rodata.data); }
+        if (data.len) { buf_append(&out, "\nsection .data\n"); buf_append(&out, data.data); }
+        if (bss.len) { buf_append(&out, "\nsection .bss\n"); buf_append(&out, bss.data); }
         buf_append(&out, "\nsection .text\n");
     } else if (strcmp(target, "riscv64-gnu") == 0) {
         buf_append(&out, constants.data);
-        if (data.len) {
-            buf_append(&out, ".section .data\n");
-            buf_append(&out, data.data);
-        }
+        if (rodata.len) { buf_append(&out, ".section .rodata\n"); buf_append(&out, rodata.data); }
+        if (data.len) { buf_append(&out, ".section .data\n"); buf_append(&out, data.data); }
+        if (bss.len) { buf_append(&out, ".section .bss\n"); buf_append(&out, bss.data); }
         buf_append(&out, "\n.section .text\n");
     } else {
         die("unknown target");
@@ -631,19 +858,12 @@ int main(int argc, char **argv) {
     char *source;
     Buffer compiled;
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) {
-            target = argv[++i];
-        } else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
-            output = argv[++i];
-        } else if (!input) {
-            input = argv[i];
-        } else {
-            die("usage: commonasmc input.cas --target x86_64-nasm|riscv64-gnu [-o output]");
-        }
+        if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) target = argv[++i];
+        else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) output = argv[++i];
+        else if (!input) input = argv[i];
+        else die("usage: commonasmc input.cas --target x86_64-nasm|riscv64-gnu [-o output]");
     }
-    if (!input || !target) {
-        die("usage: commonasmc input.cas --target x86_64-nasm|riscv64-gnu [-o output]");
-    }
+    if (!input || !target) die("usage: commonasmc input.cas --target x86_64-nasm|riscv64-gnu [-o output]");
     source = read_file(input);
     compiled = compile_source(source, target);
     write_file_or_stdout(output, &compiled);

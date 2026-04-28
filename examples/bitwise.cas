@@ -1,0 +1,16 @@
+.text
+global _start
+
+_start:
+  mov r0, 0xff
+  and r0, 0x0f
+  or r0, 0x10
+  xor r0, 0x01
+  not r0
+  shl r0, 2
+  shr r0, 1
+  sar r0, 1
+  inc r0
+  dec r0
+  neg r0
+  syscall exit, 0

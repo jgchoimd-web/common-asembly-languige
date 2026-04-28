@@ -12,3 +12,5 @@ Bootstrapping stages:
 Current status: `compiler.cal` is a concrete source sketch for the self-hosted compiler.
 The CommonASM language now has constants, byte arrays, automatic string length symbols,
 arithmetic, stack operations, memory load/store, and compare/branch operations.
+It also sketches portable data sizes, `.rodata`/`.bss`, functions, bit operations,
+and Linux syscall names shared by the C compiler.

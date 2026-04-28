@@ -17,3 +17,6 @@ build/commonasmc.exe examples/hello.cas --target riscv64-gnu -o build/hello_from
 
 This is the primary compiler implementation. It stays dependency-free so it can be used as
 the bootstrap compiler for the self-hosting compiler.
+
+CommonASM is intentionally portable: the C compiler lowers the same input into
+`x86_64-nasm` or `riscv64-gnu` output.

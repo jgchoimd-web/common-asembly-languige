@@ -1,0 +1,24 @@
+const answer = 42
+
+.rodata
+message: string "data ok\n"
+align 8
+magic: qword 0x1234
+
+.data
+bytes: byte 1, 2, 3, 4
+count: dword answer
+slot: qword 0
+
+.bss
+scratch: zero 64
+
+.text
+global _start
+
+_start:
+  load.q r0, [slot]
+  mov r1, answer
+  store.q [scratch + 8], r1
+  syscall write, 1, message, message_len
+  syscall exit, 0

@@ -1,0 +1,14 @@
+const stdin = 0
+const stdout = 1
+
+.bss
+buffer: zero 64
+
+.text
+global _start
+
+_start:
+  syscall read, stdin, buffer, 64
+  syscall write, stdout, buffer, 64
+  syscall close, stdin
+  syscall exit, 0

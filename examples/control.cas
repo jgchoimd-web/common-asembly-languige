@@ -12,8 +12,8 @@ _start:
   mul r0, 7
   push r0
   pop r1
-  store counter, r1
-  load r2, counter
+  store.q [counter], r1
+  load.q r2, [counter]
   cmp r2, 42
   je success
   syscall exit, 1

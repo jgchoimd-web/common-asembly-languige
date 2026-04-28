@@ -15,5 +15,5 @@ build/commonasmc.exe examples/hello.cas --target x86_64-nasm -o build/hello_from
 build/commonasmc.exe examples/hello.cas --target riscv64-gnu -o build/hello_from_c.s
 ```
 
-This compiler intentionally mirrors the Python compiler while staying dependency-free.
-
+This is the primary compiler implementation. It stays dependency-free so it can be used as
+the bootstrap compiler for the self-hosting compiler.

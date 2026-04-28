@@ -1,4 +1,1 @@
-__pycache__/
-.pytest_cache/
-*.pyc
 build/

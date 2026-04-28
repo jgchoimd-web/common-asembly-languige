@@ -1,0 +1,43 @@
+name: Target request
+description: Request a new CPU, VM, IR, or esolang target.
+title: "[Target]: "
+labels: ["target"]
+body:
+  - type: input
+    id: target_name
+    attributes:
+      label: Target name
+      description: Suggested --target name.
+      placeholder: myarch-gnu
+    validations:
+      required: true
+  - type: dropdown
+    id: support_level
+    attributes:
+      label: Expected support level
+      options:
+        - Primary
+        - Experimental assembly or IR
+        - Encoding or pseudo target
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Architecture notes
+      description: Register model, assembly syntax, calling convention, or links to docs.
+    validations:
+      required: true
+  - type: textarea
+    id: subset
+    attributes:
+      label: Minimum CommonASM subset
+      description: Which instructions should work first?
+      placeholder: mov, load_addr, load, store, add, sub, cmp, jmp, je, jne, call, ret
+  - type: textarea
+    id: output
+    attributes:
+      label: Desired output example
+      description: Optional example of the target assembly or source encoding.
+      render: asm

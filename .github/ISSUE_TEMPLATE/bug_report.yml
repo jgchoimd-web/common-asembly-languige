@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a compiler crash, wrong output, or diagnostic problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: CommonASM fails when...
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target
+      description: Which --target did you use?
+      placeholder: x86_64-nasm
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: CommonASM input
+      description: Paste the smallest .cas program that shows the bug.
+      render: asm
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: Paste the command you ran.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include compiler output or generated assembly if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Windows 11, gcc 13, PowerShell

@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a CommonASM language, compiler, or docs improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do?
+      placeholder: I want CommonASM to...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the syntax, behavior, or documentation change.
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example
+      description: Show the CommonASM input and expected output style if possible.
+      render: asm
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Language syntax
+        - Primary backend
+        - Experimental backend
+        - Toy or esolang backend
+        - Documentation
+        - Diagnostics
+        - Build system
+    validations:
+      required: true

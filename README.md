@@ -55,6 +55,14 @@ highlighted token when compilation fails.
 This repository includes a static project site in `docs/`. In GitHub Pages,
 choose "Deploy from a branch", select `main`, and set the folder to `/docs`.
 
+## Community files
+
+- `CODE_OF_CONDUCT.md`: project behavior rules
+- `CONTRIBUTING.md`: development and pull request guide
+- `SECURITY.md`: vulnerability reporting policy
+- `.github/ISSUE_TEMPLATE/`: issue forms
+- `.github/pull_request_template.md`: pull request checklist
+
 ## Example
 
 ```asm

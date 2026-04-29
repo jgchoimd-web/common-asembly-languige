@@ -40,6 +40,12 @@ jobs:
           fi
           grep -q "unknown target" build/unknown-target.txt
 
+      - name: Check stdin and stdout piping
+        run: |
+          set -eu
+          ./build/commonasmc - --target wasm -o - < examples/hello.cas > build/stdout.wat
+          grep -q "wasm.syscall write" build/stdout.wat
+
       - name: Compile primary target examples
         run: |
           set -eu

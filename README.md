@@ -95,6 +95,7 @@ gcc csrc/commonasmc.c -o build/commonasmc.exe
 build/commonasmc.exe --help
 build/commonasmc.exe --list-targets
 build/commonasmc.exe examples/hello.cas --target x86_64-nasm -o build/hello_x86.asm
+Get-Content examples/hello.cas | build/commonasmc.exe - --target wasm -o -
 build/commonasmc.exe examples/hello.cas --target i386-nasm -o build/hello_i386.asm
 build/commonasmc.exe examples/hello.cas --target riscv64-gnu -o build/hello_rv64.s
 build/commonasmc.exe examples/hello.cas --target aarch64-gnu -o build/hello_aarch64.s
@@ -191,5 +192,7 @@ Virtual registers are `r0` through `r15`. Each backend maps them to native regis
 - `commonasmc --help`: print command usage.
 - `commonasmc --list-targets`: print every supported target grouped by support
   style.
+- `commonasmc - --target wasm -o -`: read CommonASM from stdin and write the
+  lowered output to stdout.
 - Unknown targets fail before the input file is compiled and suggest
   `--list-targets`.

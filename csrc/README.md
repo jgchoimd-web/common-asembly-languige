@@ -14,6 +14,7 @@ Use:
 build/commonasmc.exe --help
 build/commonasmc.exe --list-targets
 build/commonasmc.exe examples/hello.cas --target x86_64-nasm -o build/hello_from_c.asm
+Get-Content examples/hello.cas | build/commonasmc.exe - --target wasm -o -
 build/commonasmc.exe examples/hello.cas --target i386-nasm -o build/hello_i386.asm
 build/commonasmc.exe examples/hello.cas --target riscv64-gnu -o build/hello_from_c.s
 build/commonasmc.exe examples/hello.cas --target aarch64-gnu -o build/hello_aarch64.s
@@ -36,6 +37,7 @@ source-encoding or pseudo-assembly outputs.
 
 Use `--list-targets` to print the supported targets from the compiler itself.
 This keeps the CLI usable even as the backend list grows.
+Use input `-` or output `-` for shell pipelines.
 
 Compile errors use ANSI terminal colors to show the exact source line, column,
 and highlighted token without any external package dependency.

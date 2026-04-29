@@ -112,7 +112,7 @@ static char **diagnostic_lines = NULL;
 static int diagnostic_line_count = 0;
 static const char *diagnostic_path = NULL;
 static const char *usage_text =
-    "usage: commonasmc input.cas --target TARGET [-o output]\n"
+    "usage: commonasmc input.cas|- --target TARGET [-o output|-]\n"
     "       commonasmc --list-targets\n"
     "       commonasmc --help";
 
@@ -262,40 +262,53 @@ static void buf_appendf(Buffer *buf, const char *fmt, const char *a, const char 
 }
 
 static char *read_file(const char *path) {
-    FILE *file = fopen(path, "rb");
-    long size;
-    char *data;
+    FILE *file = stdin;
+    Buffer data;
+    char chunk[4096];
+    size_t read_count;
+    bool should_close = false;
+    if (strcmp(path, "-") != 0) {
+        file = fopen(path, "rb");
+        should_close = true;
+    }
     if (!file) {
         die("could not open input file");
     }
-    if (fseek(file, 0, SEEK_END) != 0) {
-        die("could not seek input file");
+    buf_init(&data);
+    while ((read_count = fread(chunk, 1, sizeof(chunk), file)) > 0) {
+        buf_grow(&data, read_count);
+        memcpy(data.data + data.len, chunk, read_count);
+        data.len += read_count;
+        data.data[data.len] = '\0';
     }
-    size = ftell(file);
-    if (size < 0) {
-        die("could not read input size");
-    }
-    rewind(file);
-    data = xmalloc((size_t)size + 1);
-    if (fread(data, 1, (size_t)size, file) != (size_t)size) {
+    if (ferror(file)) {
         die("could not read input file");
     }
-    data[size] = '\0';
-    fclose(file);
-    return data;
+    if (should_close && fclose(file) != 0) {
+        die("could not close input file");
+    }
+    return data.data;
 }
 
 static void write_file_or_stdout(const char *path, const Buffer *out) {
     FILE *file = stdout;
-    if (path) {
+    bool should_close = false;
+    if (path && strcmp(path, "-") != 0) {
         file = fopen(path, "wb");
+        should_close = true;
         if (!file) {
             die("could not open output file");
         }
     }
-    fwrite(out->data, 1, out->len, file);
-    if (path) {
-        fclose(file);
+    if (out->len > 0 && fwrite(out->data, 1, out->len, file) != out->len) {
+        die("could not write output");
+    }
+    if (should_close) {
+        if (fclose(file) != 0) {
+            die("could not close output file");
+        }
+    } else if (fflush(file) != 0) {
+        die("could not flush output");
     }
 }
 
@@ -1695,7 +1708,7 @@ int main(int argc, char **argv) {
     if (!input || !target) die(usage_text);
     if (!is_supported_target(target)) die("unknown target; run commonasmc --list-targets");
     source = read_file(input);
-    set_diagnostic_source(input, source);
+    set_diagnostic_source(strcmp(input, "-") == 0 ? "<stdin>" : input, source);
     compiled = compile_source(source, target);
     write_file_or_stdout(output, &compiled);
     free(source);

@@ -168,10 +168,10 @@ build/commonasmc.exe --list-targets</code></pre>
           </article>
           <article>
             <span class="step-number">4</span>
-            <h3>Try an experimental target</h3>
-            <pre><code>build/commonasmc.exe examples/vm_ir.cas \
+            <h3>Use a pipeline</h3>
+            <pre><code>Get-Content examples/vm_ir.cas | build/commonasmc.exe - \
   --target wasm \
-  -o build/hello.wat</code></pre>
+  -o -</code></pre>
           </article>
         </div>
       </section>

@@ -11,6 +11,8 @@ gcc csrc/commonasmc.c -o build/commonasmc.exe
 Use:
 
 ```powershell
+build/commonasmc.exe --help
+build/commonasmc.exe --list-targets
 build/commonasmc.exe examples/hello.cas --target x86_64-nasm -o build/hello_from_c.asm
 build/commonasmc.exe examples/hello.cas --target i386-nasm -o build/hello_i386.asm
 build/commonasmc.exe examples/hello.cas --target riscv64-gnu -o build/hello_from_c.s
@@ -31,6 +33,9 @@ CommonASM is intentionally portable: the C compiler lowers the same input into
 primary, experimental assembly/IR, and pseudo/encoding outputs. FRACTRAN,
 Cellular Automaton, and many educational targets are intentionally experimental
 source-encoding or pseudo-assembly outputs.
+
+Use `--list-targets` to print the supported targets from the compiler itself.
+This keeps the CLI usable even as the backend list grows.
 
 Compile errors use ANSI terminal colors to show the exact source line, column,
 and highlighted token without any external package dependency.

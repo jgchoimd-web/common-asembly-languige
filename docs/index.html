@@ -155,13 +155,19 @@ _start:
           </article>
           <article>
             <span class="step-number">2</span>
+            <h3>Inspect the CLI</h3>
+            <pre><code>build/commonasmc.exe --help
+build/commonasmc.exe --list-targets</code></pre>
+          </article>
+          <article>
+            <span class="step-number">3</span>
             <h3>Compile to a primary target</h3>
             <pre><code>build/commonasmc.exe examples/hello.cas \
   --target x86_64-nasm \
   -o build/hello_x86.asm</code></pre>
           </article>
           <article>
-            <span class="step-number">3</span>
+            <span class="step-number">4</span>
             <h3>Try an experimental target</h3>
             <pre><code>build/commonasmc.exe examples/vm_ir.cas \
   --target wasm \

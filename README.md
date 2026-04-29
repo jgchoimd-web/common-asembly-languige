@@ -92,6 +92,8 @@ Compile it:
 
 ```powershell
 gcc csrc/commonasmc.c -o build/commonasmc.exe
+build/commonasmc.exe --help
+build/commonasmc.exe --list-targets
 build/commonasmc.exe examples/hello.cas --target x86_64-nasm -o build/hello_x86.asm
 build/commonasmc.exe examples/hello.cas --target i386-nasm -o build/hello_i386.asm
 build/commonasmc.exe examples/hello.cas --target riscv64-gnu -o build/hello_rv64.s
@@ -183,3 +185,11 @@ Text:
 
 Virtual registers are `r0` through `r15`. Each backend maps them to native registers.
 `cmp a, b` records `a - b` for the following conditional jump.
+
+## CLI helpers
+
+- `commonasmc --help`: print command usage.
+- `commonasmc --list-targets`: print every supported target grouped by support
+  style.
+- Unknown targets fail before the input file is compiled and suggest
+  `--list-targets`.

@@ -71,6 +71,17 @@ static const char *portable_regs[] = {
     "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
     "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
 };
+static const char *primary_targets[] = {
+    "x86_64-nasm", "riscv64-gnu", "rv64i-gnu", NULL
+};
+static const char *i386_targets[] = {
+    "i386-nasm", "ia32-nasm", NULL
+};
+static const char *generic_arch_targets[] = {
+    "armv4-gnu", "armv5-gnu", "armv7a-gnu", "aarch64-gnu",
+    "thumb-gnu", "thumb2-gnu", "rv32i-gnu", "rv128i-gnu",
+    "ia64-gnu", "loongarch64-gnu", NULL
+};
 static const char *legacy_arch_targets[] = {
     "mips1-gnu", "mips32-gnu", "mips64-gnu", "micromips-gnu",
     "power1-gnu", "power2-gnu", "ppc603-gnu", "ppcg4-gnu", "ppcg5-gnu",
@@ -101,21 +112,9 @@ static char **diagnostic_lines = NULL;
 static int diagnostic_line_count = 0;
 static const char *diagnostic_path = NULL;
 static const char *usage_text =
-    "usage: commonasmc input.cas --target "
-    "x86_64-nasm|i386-nasm|riscv64-gnu|rv64i-gnu|rv32i-gnu|rv128i-gnu|"
-    "armv4-gnu|armv5-gnu|armv7a-gnu|aarch64-gnu|thumb-gnu|thumb2-gnu|"
-    "ia64-gnu|loongarch64-gnu|mips1-gnu|mips32-gnu|mips64-gnu|micromips-gnu|"
-    "power1-gnu|power2-gnu|ppc603-gnu|ppcg4-gnu|ppcg5-gnu|power9-gnu|power10-gnu|"
-    "sparcv8-gnu|sparcv9-gnu|alpha-gnu|parisc-gnu|m88k-gnu|mos6502|wdc65c02|"
-    "wdc65816|mos6510|i8008|i8080|i8085|z80|ez80|m6800|m6809|m68k|coldfire|"
-    "avr|pic16|pic32|i8051|msp430|xtensa|superh|rx|nios2|microblaze|arc|"
-    "propeller|pdp1|pdp8|pdp11|vax|system360|system370|zarch|cdc6600|univac1|"
-    "cray1|ptx|amdgcn|rdna|intelgen|cell-spe|tms320|dsp56000|blackfin|hexagon|"
-    "ebpf|wasm|llvm-ir|gcc-gimple|gcc-rtl|jvm-bytecode|cil|dalvik|lua-bytecode|"
-    "python-bytecode|spirv|evm|mix|mmixal|lc3|lmc|marie|dcpu16|chip8|schip8|"
-    "redcode|subleq|fractran|iota|jot|malbolge-asm|brainfuck|urisc|tta|secd|"
-    "pcode|zmachine|sweet16|befunge|bitblt-vm|turing-machine|cellular-automaton|"
-    "unlambda [-o output]";
+    "usage: commonasmc input.cas --target TARGET [-o output]\n"
+    "       commonasmc --list-targets\n"
+    "       commonasmc --help";
 
 static void die(const char *message) {
     fprintf(stderr, "commonasmc: error: %s\n", message);
@@ -389,7 +388,7 @@ static bool target_in_list(const char *target, const char *const *list) {
 }
 
 static bool is_i386_target(const char *target) {
-    return strcmp(target, "i386-nasm") == 0 || strcmp(target, "ia32-nasm") == 0;
+    return target_in_list(target, i386_targets);
 }
 
 static bool is_rv64_target(const char *target) {
@@ -397,11 +396,7 @@ static bool is_rv64_target(const char *target) {
 }
 
 static bool is_generic_arch_target(const char *target) {
-    return strcmp(target, "armv4-gnu") == 0 || strcmp(target, "armv5-gnu") == 0 ||
-           strcmp(target, "armv7a-gnu") == 0 || strcmp(target, "aarch64-gnu") == 0 ||
-           strcmp(target, "thumb-gnu") == 0 || strcmp(target, "thumb2-gnu") == 0 ||
-           strcmp(target, "rv32i-gnu") == 0 || strcmp(target, "rv128i-gnu") == 0 ||
-           strcmp(target, "ia64-gnu") == 0 || strcmp(target, "loongarch64-gnu") == 0;
+    return target_in_list(target, generic_arch_targets);
 }
 
 static bool is_legacy_arch_target(const char *target) {
@@ -440,6 +435,42 @@ static bool is_ia64_target(const char *target) {
 
 static bool is_loong_target(const char *target) {
     return strcmp(target, "loongarch64-gnu") == 0;
+}
+
+static bool is_supported_target(const char *target) {
+    return target_in_list(target, primary_targets) ||
+           is_i386_target(target) ||
+           is_generic_arch_target(target) ||
+           is_legacy_arch_target(target) ||
+           is_vm_ir_target(target) ||
+           is_toy_target(target) ||
+           strcmp(target, "mmixal") == 0 ||
+           strcmp(target, "dcpu16") == 0 ||
+           strcmp(target, "fractran") == 0 ||
+           strcmp(target, "cellular-automaton") == 0;
+}
+
+static void print_target_group(const char *title, const char *const *targets) {
+    printf("%s:\n", title);
+    for (int i = 0; targets[i]; i++) {
+        printf("  %s\n", targets[i]);
+    }
+    printf("\n");
+}
+
+static void print_target_list(void) {
+    puts("CommonASM targets\n");
+    print_target_group("Primary", primary_targets);
+    print_target_group("i386 aliases", i386_targets);
+    print_target_group("Mainstream/generic assembly", generic_arch_targets);
+    print_target_group("Experimental assembly/IR", legacy_arch_targets);
+    print_target_group("VM/IR", vm_ir_targets);
+    print_target_group("Encoding/pseudo", toy_targets);
+    puts("Extra encoding targets:");
+    puts("  mmixal");
+    puts("  dcpu16");
+    puts("  fractran");
+    puts("  cellular-automaton");
 }
 
 static void remember_constant(const char *name) {
@@ -1646,6 +1677,15 @@ int main(int argc, char **argv) {
     const char *output = NULL;
     char *source;
     Buffer compiled;
+    if (argc == 2 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
+        puts(usage_text);
+        puts("\nUse --list-targets to print every supported target.");
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--list-targets") == 0) {
+        print_target_list();
+        return 0;
+    }
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) target = argv[++i];
         else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) output = argv[++i];
@@ -1653,6 +1693,7 @@ int main(int argc, char **argv) {
         else die(usage_text);
     }
     if (!input || !target) die(usage_text);
+    if (!is_supported_target(target)) die("unknown target; run commonasmc --list-targets");
     source = read_file(input);
     set_diagnostic_source(input, source);
     compiled = compile_source(source, target);

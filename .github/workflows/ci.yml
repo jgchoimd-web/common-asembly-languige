@@ -23,6 +23,23 @@ jobs:
           mkdir -p build
           gcc -std=c99 -Wall -Wextra -pedantic -O2 csrc/commonasmc.c -o build/commonasmc
 
+      - name: Check CLI help and target listing
+        run: |
+          set -eu
+          ./build/commonasmc --help > build/help.txt
+          ./build/commonasmc --list-targets > build/targets.txt
+          grep -q "commonasmc --list-targets" build/help.txt
+          grep -q "x86_64-nasm" build/targets.txt
+          grep -q "riscv64-gnu" build/targets.txt
+          grep -q "brainfuck" build/targets.txt
+          grep -q "cellular-automaton" build/targets.txt
+
+          if ./build/commonasmc examples/hello.cas --target no-such-target -o build/nope.out 2> build/unknown-target.txt; then
+            echo "expected unknown target to fail"
+            exit 1
+          fi
+          grep -q "unknown target" build/unknown-target.txt
+
       - name: Compile primary target examples
         run: |
           set -eu

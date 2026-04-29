@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke-test:
+    name: Build compiler and compile examples
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build commonasmc
+        run: |
+          mkdir -p build
+          gcc -std=c99 -Wall -Wextra -pedantic -O2 csrc/commonasmc.c -o build/commonasmc
+
+      - name: Compile primary target examples
+        run: |
+          set -eu
+          for example in examples/*.cas; do
+            name="$(basename "$example" .cas)"
+            for target in x86_64-nasm riscv64-gnu; do
+              ./build/commonasmc "$example" --target "$target" -o "build/${name}-${target}.out"
+            done
+          done
+
+      - name: Compile representative experimental targets
+        run: |
+          set -eu
+          targets="
+            i386-nasm
+            aarch64-gnu
+            armv7a-gnu
+            rv32i-gnu
+            rv128i-gnu
+            mips32-gnu
+            ppcg4-gnu
+            sparcv9-gnu
+            m68k
+            avr
+            z80
+            pdp11
+            ptx
+            ebpf
+            wasm
+            llvm-ir
+            jvm-bytecode
+            chip8
+            subleq
+            brainfuck
+            mmixal
+            dcpu16
+            fractran
+            cellular-automaton
+          "
+          for target in $targets; do
+            ./build/commonasmc examples/legacy.cas --target "$target" -o "build/legacy-${target}.out"
+          done
+
+      - name: Verify diagnostic output
+        run: |
+          set -eu
+          cat > build/bad.cas <<'CAS'
+          .text
+          global _start
+
+          _start:
+            mov r99, 1
+          CAS
+
+          if ./build/commonasmc build/bad.cas --target x86_64-nasm -o build/bad.out 2> build/diagnostic.txt; then
+            echo "expected invalid register to fail"
+            exit 1
+          fi
+
+          grep -q "expected virtual register r0-r15" build/diagnostic.txt
+          grep -q "build/bad.cas:5" build/diagnostic.txt
+          grep -q "r99" build/diagnostic.txt
+
+      - name: Check generated outputs are not empty
+        run: |
+          set -eu
+          if find build -type f \( -name "*.out" -o -name "commonasmc" \) -size 0 -print -quit | grep -q .; then
+            echo "found empty build output"
+            exit 1
+          fi

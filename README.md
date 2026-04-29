@@ -1,5 +1,7 @@
 # CommonASM
 
+[![CI](https://github.com/jgchoimd-web/common-assembly-language/actions/workflows/ci.yml/badge.svg)](https://github.com/jgchoimd-web/common-assembly-language/actions/workflows/ci.yml)
+
 CommonASM is a portable assembly IR that compiles into real assembly dialects.
 
 Curious about CommonASM? Go to https://ygsmsite.neocities.org/CommonASM
@@ -49,6 +51,12 @@ machine model does not match Linux syscalls or random-access memory.
 
 The C compiler prints ANSI-colored diagnostics with the source line, column, and
 highlighted token when compilation fails.
+
+## CI
+
+GitHub Actions builds `csrc/commonasmc.c`, compiles every example for the
+primary targets, compiles representative experimental targets, and checks that
+diagnostics highlight invalid source tokens.
 
 ## GitHub Pages site
 

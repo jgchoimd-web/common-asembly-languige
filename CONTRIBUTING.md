@@ -24,6 +24,13 @@ If a C compiler is not available, still run:
 git diff --check
 ```
 
+GitHub Actions runs the same core checks on every push and pull request:
+
+- Build `csrc/commonasmc.c` with `gcc`.
+- Compile every example for `x86_64-nasm` and `riscv64-gnu`.
+- Compile representative experimental, VM, toy, and esolang targets.
+- Verify that diagnostics point at invalid source tokens.
+
 ## Project rules
 
 - Keep `csrc/commonasmc.c` as the reference compiler implementation.

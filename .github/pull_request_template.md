@@ -14,6 +14,7 @@
 
 # Checks
 
+- [ ] CI passes
 - [ ] Built `csrc/commonasmc.c`
 - [ ] Ran `git diff --check`
 - [ ] Added or updated examples

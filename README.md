@@ -198,7 +198,9 @@ Text:
 - `syscall exit, code`
 
 Virtual registers are `r0` through `r15`. Each backend maps them to native registers.
-`cmp a, b` records `a - b` for the following conditional jump.
+`cmp a, b` records the relation between `a` and `b` for the following
+conditional jump. Signed jumps use `jg`/`jl`/`jge`/`jle`; unsigned jumps use
+`ja`/`jb`/`jae`/`jbe`.
 
 ## CLI helpers
 

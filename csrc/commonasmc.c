@@ -1518,25 +1518,24 @@ static void emit_rv_instruction(Buffer *text, const char *op, const char *size, 
     }
     if (strcmp(op, "cmp") == 0 && argc == 2) {
         int src = virtual_reg_index(args[1]);
+        buf_appendf(text, "  mv a6, %s\n", rv_reg(args[0], line_no, op), NULL, NULL);
         if (src >= 0) {
-            buf_appendf(text, "  sub a6, %s, ", rv_reg(args[0], line_no, op), NULL, NULL);
-            buf_append(text, rv_regs[src]); buf_append(text, "\n");
+            buf_appendf(text, "  mv a7, %s\n", rv_regs[src], NULL, NULL);
         } else {
             buf_appendf(text, "  li a7, %s\n", args[1], NULL, NULL);
-            buf_appendf(text, "  sub a6, %s, a7\n", rv_reg(args[0], line_no, op), NULL, NULL);
         }
         return;
     }
-    if (strcmp(op, "je") == 0 && argc == 1) { buf_appendf(text, "  beqz a6, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "jne") == 0 && argc == 1) { buf_appendf(text, "  bnez a6, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "jg") == 0 && argc == 1) { buf_appendf(text, "  bgtz a6, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "jl") == 0 && argc == 1) { buf_appendf(text, "  bltz a6, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "jge") == 0 && argc == 1) { buf_appendf(text, "  bgez a6, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "jle") == 0 && argc == 1) { buf_appendf(text, "  blez a6, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "ja") == 0 && argc == 1) { buf_appendf(text, "  bgtu a6, zero, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "jb") == 0 && argc == 1) { buf_appendf(text, "  bltu a6, zero, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "jae") == 0 && argc == 1) { buf_appendf(text, "  bgeu a6, zero, %s\n", args[0], NULL, NULL); return; }
-    if (strcmp(op, "jbe") == 0 && argc == 1) { buf_appendf(text, "  bleu a6, zero, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "je") == 0 && argc == 1) { buf_appendf(text, "  beq a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jne") == 0 && argc == 1) { buf_appendf(text, "  bne a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jg") == 0 && argc == 1) { buf_appendf(text, "  bgt a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jl") == 0 && argc == 1) { buf_appendf(text, "  blt a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jge") == 0 && argc == 1) { buf_appendf(text, "  bge a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jle") == 0 && argc == 1) { buf_appendf(text, "  ble a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "ja") == 0 && argc == 1) { buf_appendf(text, "  bgtu a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jb") == 0 && argc == 1) { buf_appendf(text, "  bltu a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jae") == 0 && argc == 1) { buf_appendf(text, "  bgeu a6, a7, %s\n", args[0], NULL, NULL); return; }
+    if (strcmp(op, "jbe") == 0 && argc == 1) { buf_appendf(text, "  bleu a6, a7, %s\n", args[0], NULL, NULL); return; }
     if (strcmp(op, "push") == 0 && argc == 1) {
         int src = virtual_reg_index(args[0]);
         if (src < 0) buf_appendf(text, "  li a6, %s\n", args[0], NULL, NULL);

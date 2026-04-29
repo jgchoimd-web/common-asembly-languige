@@ -50,6 +50,10 @@ for example in "$ROOT_DIR"/examples/*.cas; do
   done
 done
 
+grep -q "mv a6, t2" "$BUILD_DIR/control-riscv64-gnu.out"
+grep -q "li a7, 42" "$BUILD_DIR/control-riscv64-gnu.out"
+grep -q "beq a6, a7, success" "$BUILD_DIR/control-riscv64-gnu.out"
+
 targets="
   i386-nasm
   aarch64-gnu

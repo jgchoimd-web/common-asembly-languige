@@ -127,6 +127,11 @@ Get-ChildItem -Path (Join-Path $RootDir "examples") -Filter "*.cas" | ForEach-Ob
     }
 }
 
+$ControlRvPath = Join-Path $BuildPath "control-riscv64-gnu-pwsh.out"
+Assert-Contains $ControlRvPath "mv a6, t2"
+Assert-Contains $ControlRvPath "li a7, 42"
+Assert-Contains $ControlRvPath "beq a6, a7, success"
+
 $RepresentativeTargets = @(
     "i386-nasm",
     "aarch64-gnu",

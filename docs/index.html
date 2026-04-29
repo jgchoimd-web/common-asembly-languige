@@ -8,12 +8,17 @@
       name="description"
       content="CommonASM is a portable assembly IR that compiles one source into many assembly and experimental target formats."
     >
+    <meta property="og:title" content="CommonASM">
+    <meta property="og:description" content="A portable assembly IR for many CPU, VM, and experimental targets.">
+    <meta property="og:image" content="assets/commonasm-logo.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/jpeg" href="assets/commonasm-logo.jpg">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <header class="site-header">
       <a class="brand" href="#top" aria-label="CommonASM home">
-        <span class="brand-mark">CA</span>
+        <img class="brand-logo" src="assets/commonasm-logo.jpg" alt="" width="48" height="48">
         <span>CommonASM</span>
       </a>
       <nav aria-label="Main navigation">
@@ -40,21 +45,10 @@
           </div>
         </div>
 
-        <div class="terminal-art" aria-label="CommonASM lowering diagram">
-          <div class="terminal-bar">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-          <pre><code>your language
-  -> CommonASM
-     -> x86_64-nasm
-     -> riscv64-gnu
-     -> wasm
-     -> llvm-ir
-     -> mips32-gnu
-     -> brainfuck</code></pre>
-        </div>
+        <figure class="official-logo" aria-label="CommonASM official logo">
+          <img src="assets/commonasm-logo.jpg" alt="CommonASM official logo">
+          <figcaption>Official CommonASM logo</figcaption>
+        </figure>
       </section>
 
       <section class="summary-band" aria-label="Project summary">

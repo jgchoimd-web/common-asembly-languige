@@ -64,16 +64,11 @@ pre {
   text-decoration: none;
 }
 
-.brand-mark {
-  display: inline-grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
+.brand-logo {
+  width: 48px;
+  height: 48px;
   border: 2px solid var(--ink);
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.82rem;
-  letter-spacing: 0;
+  object-fit: cover;
 }
 
 nav {
@@ -173,6 +168,7 @@ h1 {
 }
 
 .terminal-art,
+.official-logo img,
 .code-panel,
 .diagnostic-output,
 .steps article,
@@ -186,6 +182,26 @@ h1 {
 .terminal-art {
   overflow: hidden;
   transform: rotate(1deg);
+}
+
+.official-logo {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  align-self: center;
+}
+
+.official-logo img {
+  display: block;
+  width: 100%;
+  max-height: min(74vh, 720px);
+  object-fit: cover;
+}
+
+.official-logo figcaption {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
 }
 
 .terminal-bar {

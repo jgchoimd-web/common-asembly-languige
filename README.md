@@ -2,7 +2,11 @@
 
 [![CI](https://github.com/jgchoimd-web/common-assembly-language/actions/workflows/ci.yml/badge.svg)](https://github.com/jgchoimd-web/common-assembly-language/actions/workflows/ci.yml)
 
+![CommonASM official logo](docs/assets/commonasm-logo.jpg)
+
 CommonASM is a portable assembly IR that compiles into real assembly dialects.
+
+Official logo: `docs/assets/commonasm-logo.jpg`
 
 Curious about CommonASM? Go to https://ygsmsite.neocities.org/CommonASM
 

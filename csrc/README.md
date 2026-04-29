@@ -8,6 +8,12 @@ Build:
 gcc csrc/commonasmc.c -o build/commonasmc.exe
 ```
 
+Run smoke tests on systems with a POSIX shell:
+
+```sh
+sh scripts/smoke-test.sh
+```
+
 Use:
 
 ```powershell

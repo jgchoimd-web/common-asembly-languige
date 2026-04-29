@@ -18,15 +18,23 @@ build/commonasmc.exe examples/hello.cas --target x86_64-nasm -o build/hello_x86.
 build/commonasmc.exe examples/hello.cas --target riscv64-gnu -o build/hello_rv64.s
 ```
 
+Run the smoke test suite on systems with a POSIX shell:
+
+```sh
+sh scripts/smoke-test.sh
+```
+
 If a C compiler is not available, still run:
 
 ```powershell
 git diff --check
 ```
 
-GitHub Actions runs the same core checks on every push and pull request:
+GitHub Actions runs `scripts/smoke-test.sh` on every push and pull request:
 
 - Build `csrc/commonasmc.c` with `gcc`.
+- Check CLI help, target listing, and target metadata.
+- Check stdin/stdout piping.
 - Compile every example for `x86_64-nasm` and `riscv64-gnu`.
 - Compile representative experimental, VM, toy, and esolang targets.
 - Verify that diagnostics point at invalid source tokens.
